@@ -1,4 +1,4 @@
-#include <windows.h>
+﻿#include <windows.h>
 #include "../Input/InputDispatcher.h"
 #include "../Render/Renderer.h"
 #include "Window.h"

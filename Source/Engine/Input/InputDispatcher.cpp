@@ -1,7 +1,8 @@
-#include "InputDispatcher.h"
+﻿#include "InputDispatcher.h"
 #include "../../Game/Chat/Chat.h"
 #include "../../Game/Pet/Pet.h"
 #include <windows.h>
+#include <windowsx.h>  // 这里包含 GET_X_LPARAM 等宏
 
 extern PetState g_pet;
 

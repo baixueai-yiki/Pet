@@ -1,4 +1,4 @@
-#include "Path.h"
+﻿#include "Path.h"
 #include <windows.h>
 
 std::wstring GetExeDir()

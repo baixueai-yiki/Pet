@@ -1,4 +1,4 @@
-#include "Renderer.h"
+﻿#include "Renderer.h"
 #include "../../Core/Path.h"
 #include "../../Game/Pet/Pet.h"
 #include <gdiplus.h>

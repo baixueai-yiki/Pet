@@ -1,0 +1,23 @@
+Source/
+│
+├── Core 工具层
+│    └── qingPath
+│
+├── Engine 引擎层
+│   ├── Window
+│   │     └── qingWindow
+│   ├── Render
+│   │     └── qingRenderer
+│   └── Input
+│           └── qingInputDispatcher
+│
+├── Game 游戏逻辑层
+│   ├── Pet
+│   │     ├── qingPetContext
+│   │     ├── qingPetState
+│   │     └── qingPetBehavior
+│   └── Chat
+│          └── qingChat
+│
+└── Main
+      └── main.cpp

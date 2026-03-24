@@ -1,5 +1,6 @@
-﻿#pragma once
+#pragma once
 
+// 记录宠物的位置、大小以及拖拽状态
 struct PetState
 {
     int x;
@@ -13,6 +14,7 @@ struct PetState
 
 extern PetState g_pet;
 
+// 宠物当前的情绪枚举
 enum class PetMood
 {
     Idle,
@@ -20,6 +22,7 @@ enum class PetMood
     Sleepy,
 };
 
+// 把情绪枚举转换为可显示的中文字符串
 inline const wchar_t* PetMoodToString(PetMood mood)
 {
     switch (mood)
@@ -30,5 +33,7 @@ inline const wchar_t* PetMoodToString(PetMood mood)
     }
 }
 
+// 初始化宠物位置与交互状态
 void PetInit();
+// 后续可以在此驱动宠物行为（如动画或状态切换）
 void PetBehaviorTick();

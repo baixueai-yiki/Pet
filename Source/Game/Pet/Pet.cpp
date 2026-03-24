@@ -1,5 +1,6 @@
-﻿#include "Pet.h"
+#include "Pet.h"
 
+// 全局宠物状态实例，在渲染与输入逻辑中共享
 PetState g_pet = { 120, 120, 0, 0, false, 0, 0 };
 
 void PetInit()
@@ -15,5 +16,5 @@ void PetInit()
 
 void PetBehaviorTick()
 {
-    // Placeholder for future behavior logic.
+    // 占位符，未来可在此添加宠物自动行为、状态切换等逻辑
 }

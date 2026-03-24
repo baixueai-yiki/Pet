@@ -1,12 +1,14 @@
-﻿#include "Chat.h"
+#include "Chat.h"
 #include <string>
 #include <windows.h>
 
+// 聊天输入窗口的静态状态：窗口句柄、输入内容、拖拽偏移与标记
 static HWND s_hInputWnd = nullptr;
 static std::wstring s_inputText;
 static POINT s_dragOffset;
 static bool s_dragging = false;
 
+// 聊天输入窗口的窗口过程，负责绘制与输入交互
 static LRESULT CALLBACK InputWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     static bool flash = false;
@@ -34,6 +36,7 @@ static LRESULT CALLBACK InputWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     }
     case WM_LBUTTONDOWN:
     {
+        // 点击窗口时闪烁并开启拖拽
         flash = true;
         InvalidateRect(hwnd, nullptr, TRUE);
         s_dragging = true;
@@ -81,6 +84,7 @@ static LRESULT CALLBACK InputWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM 
     return 0;
 }
 
+// 封装对话弹窗，统一显示文本
 static void ChatTalk(HWND hwnd, const wchar_t* text)
 {
     MessageBoxW(hwnd, text, L"晴小姐", MB_OK);
@@ -139,6 +143,7 @@ void ChatShowInput(HWND hwndParent)
     ShowWindow(s_hInputWnd, SW_SHOW);
     SetFocus(s_hInputWnd);
 
+    // 使用消息循环保持此输入窗口活跃
     MSG msg;
     while (IsWindow(s_hInputWnd))
     {

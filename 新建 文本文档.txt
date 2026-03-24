@@ -1,0 +1,23 @@
+Source/
+│
+├── Core 工具层
+│    └── Path
+│
+├── Engine 引擎层
+│   ├── Window
+│   │     └── Window
+│   ├── Render
+│   │     └── Renderer
+│   └── Input
+│           └── InputDispatcher
+│
+├── Game 游戏逻辑层
+│   ├── Pet
+│   │     ├── PetContext
+│   │     ├── PetState
+│   │     └── PetBehavior
+│   └── Chat
+│          └── Chat
+│
+└── Main
+      └── main.cpp

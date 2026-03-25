@@ -1,6 +1,6 @@
 ﻿#include <windows.h>
 #include "Engine/Window/Window.h"
-#include "Engine/Render/Renderer.h"
+#include "Engine/Render/Render.h"
 #include "../Game/Pet/Pet.h"
 
 static HWND g_hwnd = nullptr;
@@ -9,6 +9,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
 {
     // 初始化宠物的状态数据，确保后续渲染与交互依赖的数据有效
     PetInit();
+    
 
     // 启动渲染器并加载资源；失败时给出提示并退出
     if (!RendererInit())

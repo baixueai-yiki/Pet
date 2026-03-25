@@ -13,11 +13,22 @@ Source/
 │
 ├── Game 游戏逻辑层
 │   ├── Pet
-│   │     ├── PetContext
-│   │     ├── PetState
-│   │     └── PetBehavior
+│   │     ├── Pet
+│   │     ├── 
+│   │     └── 
 │   └── Chat
 │          └── Chat
 │
 └── Main
-      └── main.cpp
+      └── Main.cpp
+
+/Distribution
+│
+└── Miss qing 
+       ├── assets
+       │    ├── images
+       └── config
+/Bin
+
+/Build
+

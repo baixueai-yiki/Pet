@@ -1,12 +1,12 @@
-#include "InputDispatcher.h"
+﻿#include "InputDispatcher.h"
 #include "../../Game/Chat/Chat.h"
 #include "../../Game/Pet/Pet.h"
 #include <windows.h>
-#include <windowsx.h>  // 这里包含 GET_X_LPARAM 等宏
+#include <windowsx.h>  // contains GET_X_LPARAM, etc.
 
 extern PetState g_pet;
 
-// 判断指定点是否落在宠物贴图区域内
+// 判断给定点是否落在当前宠物绘制区域，用于拖拽和点击判断
 static bool IsInsidePet(int x, int y)
 {
     return x >= g_pet.x &&
@@ -15,9 +15,10 @@ static bool IsInsidePet(int x, int y)
            y <= g_pet.y + g_pet.h;
 }
 
-// 记录最近几次鼠标右键按下时间，用于识别特殊三连击组合
+// 记录最近六次右键点击时间，用于识别“慢三连+快三连”组合
 static DWORD s_rightClickTimes[6] = {};
 
+// 统一处理主窗口所有鼠标消息，拖拽/穿透/聊天触发都在这里处理
 void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     int x = GET_X_LPARAM(lParam);
@@ -27,19 +28,7 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
     case WM_MOUSEMOVE:
     {
-        // 根据鼠标是否在宠物上调整窗口是否透传，借此实现透明窗口下的穿透
-        if (IsInsidePet(x, y))
-        {
-            SetWindowLong(hwnd, GWL_EXSTYLE,
-                GetWindowLong(hwnd, GWL_EXSTYLE) & ~WS_EX_TRANSPARENT);
-        }
-        else
-        {
-            SetWindowLong(hwnd, GWL_EXSTYLE,
-                GetWindowLong(hwnd, GWL_EXSTYLE) | WS_EX_TRANSPARENT);
-        }
-
-        // 如果处于拖拽状态，则更新宠物位置并请求重绘
+        // 拖拽时更新宠物位置并触发重绘
         if (g_pet.isDragging)
         {
             g_pet.x = x - g_pet.dragOffsetX;
@@ -52,7 +41,7 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_LBUTTONDOWN:
     {
-        // 鼠标左键落在宠物区域内时开始拖拽
+        // 只有点击在宠物区域内才开始拖拽
         if (IsInsidePet(x, y))
         {
             g_pet.isDragging = true;
@@ -63,14 +52,14 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     case WM_LBUTTONUP:
-        // 释放左键即停止拖拽并刷新界面
+        // 松开左键结束拖拽
         g_pet.isDragging = false;
         InvalidateRect(hwnd, nullptr, TRUE);
         break;
 
     case WM_RBUTTONDOWN:
     {
-        // 滚动右键时间，把最新的时间推入队列，保持窗口大小为6
+        // 右键时间序列滑动，用来检测慢三连 + 快三连
         for (int i = 0; i < 5; ++i)
             s_rightClickTimes[i] = s_rightClickTimes[i + 1];
         s_rightClickTimes[5] = GetTickCount();
@@ -81,7 +70,6 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         bool slowTriple = (s_rightClickTimes[3] - s_rightClickTimes[0] <= slowMax);
         bool fastTriple = (s_rightClickTimes[5] - s_rightClickTimes[3] <= fastMax);
 
-        // 只有满足“慢三连”+“快三连”，才弹出聊天输入框
         if (slowTriple && fastTriple)
         {
             for (int i = 0; i < 6; ++i)

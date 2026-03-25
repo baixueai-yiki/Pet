@@ -1,4 +1,4 @@
-#include "Pet.h"
+﻿#include "Pet.h"
 
 // 全局宠物状态实例，在渲染与输入逻辑中共享
 PetState g_pet = { 120, 120, 0, 0, false, 0, 0 };

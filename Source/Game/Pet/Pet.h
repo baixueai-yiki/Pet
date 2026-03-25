@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // 记录宠物的位置、大小以及拖拽状态
 struct PetState

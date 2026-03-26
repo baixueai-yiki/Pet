@@ -45,8 +45,20 @@ bool RendererInit()
         return false;
     }
 
-    g_pet.w = s_image->GetWidth();
-    g_pet.h = s_image->GetHeight();
+    const int imgW = static_cast<int>(s_image->GetWidth());
+    const int imgH = static_cast<int>(s_image->GetHeight());
+    const int targetW = 200;
+    if (imgW > 0 && imgH > 0)
+    {
+        double scale = static_cast<double>(targetW) / static_cast<double>(imgW);
+        g_pet.w = targetW;
+        g_pet.h = static_cast<int>(imgH * scale + 0.5);
+    }
+    else
+    {
+        g_pet.w = imgW;
+        g_pet.h = imgH;
+    }
 
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);

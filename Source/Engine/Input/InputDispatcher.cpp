@@ -1,6 +1,12 @@
 ﻿#include "InputDispatcher.h"
 #include "../../Game/Chat/Chat.h"
 #include "../../Game/Pet/Pet.h"
+#include "../../Core/Path.h"
+#include <cwctype>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <vector>
 #include <windows.h>
 #include <windowsx.h>  // contains GET_X_LPARAM, etc.
 
@@ -15,9 +21,98 @@ static bool IsInsidePet(int x, int y)
            y <= g_pet.y + g_pet.h;
 }
 
+static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return false;
+
+    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.empty())
+        return true;
+
+    bool utf8 = (data.size() >= 3 &&
+                 static_cast<unsigned char>(data[0]) == 0xEF &&
+                 static_cast<unsigned char>(data[1]) == 0xBB &&
+                 static_cast<unsigned char>(data[2]) == 0xBF);
+    if (utf8)
+        data.erase(0, 3);
+
+    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0)
+        return false;
+
+    std::wstring wdata(static_cast<size_t>(wlen), L"\0"[0]);
+    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
+
+    std::wistringstream iss(wdata);
+    std::wstring line;
+    while (std::getline(iss, line))
+    {
+        if (!line.empty() && line.back() == L"\r"[0])
+            line.pop_back();
+        lines.push_back(line);
+    }
+    return true;
+}
+
+
 // 记录最近六次右键点击时间，用于识别“慢三连+快三连”组合
 static DWORD s_rightClickTimes[6] = {};
 
+static std::wstring Trim(const std::wstring& s)
+{
+    size_t b = 0;
+    while (b < s.size() && iswspace(s[b]))
+        ++b;
+    size_t e = s.size();
+    while (e > b && iswspace(s[e - 1]))
+        --e;
+    return s.substr(b, e - b);
+}
+
+static std::wstring ToLower(std::wstring s)
+{
+    for (auto& ch : s)
+        ch = static_cast<wchar_t>(towlower(ch));
+    return s;
+}
+
+static std::wstring ReadStringSetting(const std::wstring& key, const std::wstring& defaultValue)
+{
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(GetConfigPath(L"settings.txt"), lines))
+        return defaultValue;
+
+    for (const auto& lineRaw : lines)
+    {
+        std::wstring line = lineRaw;
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t eq = line.find(L'=');
+        if (eq == std::wstring::npos)
+            continue;
+        std::wstring k = Trim(line.substr(0, eq));
+        std::wstring v = Trim(line.substr(eq + 1));
+        std::wstring kLower = ToLower(k);
+        std::wstring keyLower = ToLower(key);
+        if (kLower == keyLower ||
+            (keyLower == L"chat_trigger" && (k == L"唤出方式" || k == L"对话触发")))
+            return v;
+    }
+    return defaultValue;
+}
+
+static std::wstring NormalizeTrigger(std::wstring v)
+{
+    v = ToLower(Trim(v));
+    if (v == L"right_click_once" || v == L"rightclickonce" || v == L"one" || v == L"1" || v == L"右键一次" || v == L"右键1次" || v == L"右键" || v == L"求救")
+        return L"right_click_once";
+    if (v == L"right_click_combo" || v == L"rightclickcombo" || v == L"combo" || v == L"6" || v == L"右键六次" || v == L"右键6次")
+        return L"right_click_combo";
+    return L"right_click_combo";
+}
 // 统一处理主窗口所有鼠标消息，拖拽/穿透/聊天触发都在这里处理
 void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
@@ -33,6 +128,9 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         {
             g_pet.x = x - g_pet.dragOffsetX;
             g_pet.y = y - g_pet.dragOffsetY;
+            ChatUpdateInputPosition();
+            ChatUpdateTalkPosition();
+            ChatUpdateButtonPosition();
             InvalidateRect(hwnd, nullptr, TRUE);
         }
 
@@ -59,6 +157,17 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_RBUTTONDOWN:
     {
+        // 仅在宠物区域内触发聊天
+        if (!IsInsidePet(x, y))
+            break;
+
+        std::wstring trigger = NormalizeTrigger(ReadStringSetting(L"唤出方式", L"right_click_combo"));
+        if (trigger == L"right_click_once")
+        {
+            ChatShowInput(hwnd);
+            break;
+        }
+
         // 右键时间序列滑动，用来检测慢三连 + 快三连
         for (int i = 0; i < 5; ++i)
             s_rightClickTimes[i] = s_rightClickTimes[i + 1];

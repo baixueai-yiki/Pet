@@ -1,6 +1,9 @@
 ﻿#include "InputChat.h"
 #include <fstream>
 #include <map>
+#include <sstream>
+#include <string>
+#include <vector>
 #include <cstring>
 
 #ifdef _WIN32
@@ -9,7 +12,6 @@
 
 namespace
 {
-    // 去除行首/行尾的空白字符，避免读取配置时因空格导致 Key mismatch
     std::wstring Trim(const std::wstring& text)
     {
         const wchar_t* ws = L" \t\r\n";
@@ -20,6 +22,59 @@ namespace
         return text.substr(start, end - start + 1);
     }
 
+#ifdef _WIN32
+    bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
+    {
+        std::ifstream file(path, std::ios::binary);
+        if (!file.is_open())
+            return false;
+
+        std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        if (data.empty())
+            return true;
+
+        bool utf8 = (data.size() >= 3 &&
+                     static_cast<unsigned char>(data[0]) == 0xEF &&
+                     static_cast<unsigned char>(data[1]) == 0xBB &&
+                     static_cast<unsigned char>(data[2]) == 0xBF);
+        if (utf8)
+            data.erase(0, 3);
+
+        UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+        int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+        if (wlen <= 0)
+            return false;
+
+        std::wstring wdata(static_cast<size_t>(wlen), L'\0');
+        MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
+
+        std::wistringstream iss(wdata);
+        std::wstring line;
+        while (std::getline(iss, line))
+        {
+            if (!line.empty() && line.back() == L'\r')
+                line.pop_back();
+            lines.push_back(line);
+        }
+        return true;
+    }
+#else
+    bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
+    {
+        std::wifstream file(path);
+        if (!file.is_open())
+            return false;
+
+        std::wstring line;
+        while (std::getline(file, line))
+        {
+            if (!line.empty() && line.back() == L'\r')
+                line.pop_back();
+            lines.push_back(line);
+        }
+        return true;
+    }
+#endif
     std::map<std::wstring, std::wstring> s_textResponses;
     std::map<std::wstring, std::wstring> s_buttonResponses;
     std::wstring s_defaultResponse;
@@ -99,13 +154,13 @@ bool LoadChatConfig(const std::wstring& configPath)
     s_buttonResponses.clear();
     s_defaultResponse.clear();
 
-    std::wifstream file(configPath);
-    if (!file.is_open())
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(configPath, lines))
         return false;
 
-    std::wstring line;
-    while (std::getline(file, line))
+    for (const auto& lineRaw : lines)
     {
+        std::wstring line = lineRaw;
         line = Trim(line);
         if (line.empty() || line.front() == L'#')
             continue;
@@ -186,8 +241,8 @@ ButtonInputEvent ProcessButtonInput(ButtonInputState& state, WPARAM key, bool is
 
 // 每次使用配置前调用，可在配置文件修改后刷新缓存
 void MaybeReloadChatConfig()
-{
 #ifdef _WIN32
+{
     if (ConfigFileChanged() && !s_activeConfigPath.empty())
         LoadChatConfig(s_activeConfigPath);
 #else

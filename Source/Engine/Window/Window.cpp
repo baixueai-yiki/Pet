@@ -1,18 +1,121 @@
-#include <windows.h>
+ï»¿#include <windows.h>
 #include <windowsx.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <cwctype>
+#include <vector>
 #include "../Input/InputDispatcher.h"
 #include "../Render/Render.h"
 #include "Window.h"
+#include "../../Core/Path.h"
 #include "../../Game/Pet/Pet.h"
 #include "../../Game/Chat/Chat.h"
+
+
+static std::wstring Trim(const std::wstring& s)
+{
+    size_t b = 0;
+    while (b < s.size() && iswspace(s[b]))
+        ++b;
+    size_t e = s.size();
+    while (e > b && iswspace(s[e - 1]))
+        --e;
+    return s.substr(b, e - b);
+}
+static std::wstring ToLower(std::wstring s)
+{
+    for (auto& ch : s)
+        ch = static_cast<wchar_t>(towlower(ch));
+    return s;
+}
+
+static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return false;
+
+    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.empty())
+        return true;
+
+    bool utf8 = (data.size() >= 3 &&
+                 static_cast<unsigned char>(data[0]) == 0xEF &&
+                 static_cast<unsigned char>(data[1]) == 0xBB &&
+                 static_cast<unsigned char>(data[2]) == 0xBF);
+    if (utf8)
+        data.erase(0, 3);
+
+    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0)
+        return false;
+
+    std::wstring wdata(static_cast<size_t>(wlen), L'\0');
+    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
+
+    std::wistringstream iss(wdata);
+    std::wstring line;
+    while (std::getline(iss, line))
+    {
+        if (!line.empty() && line.back() == L'\r')
+            line.pop_back();
+        lines.push_back(line);
+    }
+    return true;
+}
+
+static int ReadIntSetting(const std::wstring& key, int defaultValue)
+{
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(GetConfigPath(L"settings.txt"), lines))
+        return defaultValue;
+
+    for (const auto& lineRaw : lines)
+    {
+        std::wstring line = lineRaw;
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t eq = line.find(L'=');
+        if (eq == std::wstring::npos)
+            continue;
+        std::wstring k = Trim(line.substr(0, eq));
+        std::wstring kLower = ToLower(k);
+        std::wstring keyLower = ToLower(key);
+        std::wstring v = Trim(line.substr(eq + 1));
+        if (kLower == keyLower ||
+            (keyLower == L"fps" && (k == L"å¸§çŽ‡" || k == L"åˆ·æ–°çŽ‡")))
+        {
+            std::wistringstream iss(v);
+            int out = defaultValue;
+            iss >> out;
+            return out;
+        }
+    }
+    return defaultValue;
+}
+static UINT GetRefreshIntervalMs()
+{
+    int fps = ReadIntSetting(L"fps", 60);
+    if (fps != 30 && fps != 60 && fps != 120)
+        fps = 60;
+    return static_cast<UINT>(1000 / fps);
+}
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
+    case WM_CREATE:
+        // Use a timer to keep drag redraw smooth
+        SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
+        break;
+
+
     case WM_NCHITTEST:
     {
-        // Ö»ÓÐ³èÎïÇøÓò¿Éµã»÷£¬ÆäÓàÇøÓòµã»÷´©Í¸
+        // åªæœ‰å® ç‰©åŒºåŸŸå¯ç‚¹å‡»ï¼Œå…¶ä½™åŒºåŸŸç‚¹å‡»ç©¿é€
         int x = GET_X_LPARAM(lParam);
         int y = GET_Y_LPARAM(lParam);
         if (x >= g_pet.x && x <= g_pet.x + g_pet.w &&
@@ -27,15 +130,42 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
         HandleInput(hwnd, msg, wParam, lParam);
         break;
+    case WM_TIMER:
+        // Redraw at a steady rate while dragging
+        if (g_pet.isDragging)
+            InvalidateRect(hwnd, nullptr, FALSE);
+        break;
+
 
     case WM_PAINT:
     {
-        // ½øÈë/ÍË³ö»æÖÆÁ÷³Ì£¬È·±£ WM_PAINT ±»ÕýÈ·Ïû·Ñ
+        // è¿›å…¥/é€€å‡ºç»˜åˆ¶æµç¨‹ï¼Œç¡®ä¿ WM_PAINT è¢«æ­£ç¡®æ¶ˆè´¹
         PAINTSTRUCT ps;
         BeginPaint(hwnd, &ps);
-        RendererRender(ps.hdc);
+
+        // ä½¿ç”¨åŒç¼“å†²å‡å°‘æ‹–åŠ¨æ—¶é—ªçƒ
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        int w = rc.right - rc.left;
+        int h = rc.bottom - rc.top;
+
+        HDC memDC = CreateCompatibleDC(ps.hdc);
+        HBITMAP memBmp = CreateCompatibleBitmap(ps.hdc, w, h);
+        HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
+
+        // å…ˆæ¸…æˆé»‘è‰²ï¼ˆä¸Žé¢œè‰²é”®ä¸€è‡´ï¼‰ï¼Œå†ç»˜åˆ¶å® ç‰©
+        HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
+        FillRect(memDC, &rc, black);
+        RendererRender(memDC);
+
+        BitBlt(ps.hdc, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
+
+        SelectObject(memDC, oldBmp);
+        DeleteObject(memBmp);
+        DeleteDC(memDC);
         EndPaint(hwnd, &ps);
         break;
     }
@@ -44,6 +174,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 1;
 
     case WM_DESTROY:
+        KillTimer(hwnd, 1);
         PostQuitMessage(0);
         return 0;
 

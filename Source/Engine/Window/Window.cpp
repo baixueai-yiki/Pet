@@ -9,9 +9,12 @@
 #include "../Render/Render.h"
 #include "Window.h"
 #include "../../Core/Path.h"
+#include "../../Core/Diary.h"
 #include "../../Game/Pet/Pet.h"
 #include "../../Game/Chat/Chat.h"
 
+static const UINT_PTR kIdleCheckTimer = 2;
+static const UINT kIdleCheckMs = 60000;
 
 static std::wstring Trim(const std::wstring& s)
 {
@@ -105,11 +108,13 @@ static UINT GetRefreshIntervalMs()
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
+    static bool s_exitHandled = false;
     switch (msg)
     {
     case WM_CREATE:
         // Use a timer to keep drag redraw smooth
         SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
+        SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
         break;
 
 
@@ -135,8 +140,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         break;
     case WM_TIMER:
         // Redraw at a steady rate while dragging
-        if (g_pet.isDragging)
-            InvalidateRect(hwnd, nullptr, FALSE);
+        if (wParam == kIdleCheckTimer)
+        {
+            ChatTickIdleCheck(hwnd);
+        }
+        else
+        {
+            if (g_pet.isDragging)
+                InvalidateRect(hwnd, nullptr, FALSE);
+        }
         break;
 
 
@@ -174,8 +186,28 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 1;
 
     case WM_DESTROY:
-        KillTimer(hwnd, 1);
+        if (!s_exitHandled)
+        {
+            s_exitHandled = true;
+            OnProgramExit();
+        }
         PostQuitMessage(0);
+        return 0;
+
+    case WM_QUERYENDSESSION:
+        if (!s_exitHandled)
+        {
+            s_exitHandled = true;
+            OnProgramExit();
+        }
+        return TRUE;
+
+    case WM_ENDSESSION:
+        if (wParam && !s_exitHandled)
+        {
+            s_exitHandled = true;
+            OnProgramExit();
+        }
         return 0;
 
     case WM_USER + 1:

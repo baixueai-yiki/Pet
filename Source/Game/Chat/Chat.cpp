@@ -1,14 +1,24 @@
 ﻿#include <windows.h>
+#include <windowsx.h>
 #include <imm.h>
 #include "Chat.h"
 #include "Core/Path.h"
 #include "../../Game/Pet/Pet.h"
+#include "../../Engine/Input/InputDispatcher.h"
 #include <string>
 #include <fstream>
 #include <map>
 #include <vector>
 #include <sstream>
 #include <cstring>
+#include <set>
+#include <shellapi.h>
+#include <iomanip>
+#include <fstream>
+#include <chrono>
+#include <ctime>
+#include <cwctype>
+#include "Game/Audio/Audio.h"
 
 // 全局静态状态（仅当前 cpp 使用）
 static HWND s_hInputWnd = nullptr;// 当前输入窗口句柄
@@ -56,6 +66,17 @@ static FILETIME s_dialogWriteTime = {};
 static bool s_hasDialogTime = false;
 static HWND s_hTalkWnd = nullptr;
 static std::wstring s_talkText;
+static HWND s_hTaskWnd = nullptr;
+struct TaskEntry
+{
+    std::wstring title;
+    HICON icon;
+    DWORD pid;
+};
+static std::vector<TaskEntry> s_taskEntries;
+static int s_taskSelected = -1;
+static HWND s_hKillBtn = nullptr;
+static DWORD s_taskSelectedPid = 0;
 static HFONT s_talkFont = nullptr;
 static const int kTalkMaxWidth = 240;
 static const int kTalkPadding = 8;
@@ -64,6 +85,73 @@ static const int kTalkTail = 10;
 static bool s_talkOnRight = true;
 static const UINT_PTR kTalkAutoHideTimer = 1;
 static const UINT kTalkAutoHideMs = 3000;
+static HANDLE s_quitTimer = nullptr;
+static const DWORD kQuitDelayMs = 5000;
+static HWND s_mainHwnd = nullptr;
+static const int kTaskHeight = 200;
+static const UINT_PTR kTaskRefreshTimer = 2;
+static const UINT kTaskRefreshMs = 5000;
+static const int kTaskPadding = 10;
+static const int kTaskLineH = 24;
+static const int kTaskIcon = 16;
+struct ChatState
+{
+    long long lastInteraction;
+    int valence;
+    int arousal;
+};
+
+static ChatState s_state = { 0, 8, 8 };
+static bool s_stateLoaded = false;
+static bool s_idleSeeded = false;
+
+#pragma comment(lib, "shell32.lib")
+
+static bool IsTaskListTrigger(const std::wstring& text)
+{
+    return text == L"任务管理器";
+}
+
+// forward decls
+static void HideKillButton();
+
+static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines);
+static std::wstring Trim(const std::wstring& text);
+
+static int ReadSettingsInt(const std::wstring& key, int defaultValue)
+{
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(GetConfigPath(L"settings.txt"), lines))
+        return defaultValue;
+
+    for (const auto& lineRaw : lines)
+    {
+        std::wstring line = Trim(lineRaw);
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t eq = line.find(L'=');
+        if (eq == std::wstring::npos)
+            continue;
+        std::wstring k = Trim(line.substr(0, eq));
+        if (!k.empty() && k.front() == L'\ufeff')
+            k.erase(0, 1);
+        std::wstring v = Trim(line.substr(eq + 1));
+        if (k == key)
+        {
+            int val = defaultValue;
+            std::wistringstream iss(v);
+            iss >> val;
+            return val;
+        }
+    }
+
+    return defaultValue;
+}
+static VOID CALLBACK QuitTimerProc(PVOID, BOOLEAN)
+{
+    if (s_mainHwnd)
+        PostMessageW(s_mainHwnd, WM_CLOSE, 0, 0);
+}
 
 static std::wstring Trim(const std::wstring& text)
 {
@@ -112,6 +200,291 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
         lines.push_back(line);
     }
     return true;
+}
+
+static bool ReadFileText(const std::wstring& path, std::wstring& text)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return false;
+
+    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.empty())
+    {
+        text.clear();
+        return true;
+    }
+
+    bool utf8 = (data.size() >= 3 &&
+                 static_cast<unsigned char>(data[0]) == 0xEF &&
+                 static_cast<unsigned char>(data[1]) == 0xBB &&
+                 static_cast<unsigned char>(data[2]) == 0xBF);
+    if (utf8)
+        data.erase(0, 3);
+
+    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0)
+        return false;
+
+    text.assign(static_cast<size_t>(wlen), L'\0');
+    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &text[0], wlen);
+    return true;
+}
+
+static long long GetUnixTimeSeconds()
+{
+    return static_cast<long long>(time(nullptr));
+}
+
+static bool ParseJsonInt64(const std::wstring& text, const std::wstring& key, long long& out)
+{
+    std::wstring pattern = L"\"" + key + L"\"";
+    size_t pos = text.find(pattern);
+    if (pos == std::wstring::npos)
+        return false;
+    pos = text.find(L':', pos + pattern.size());
+    if (pos == std::wstring::npos)
+        return false;
+    ++pos;
+    while (pos < text.size() && iswspace(text[pos]))
+        ++pos;
+    if (pos >= text.size())
+        return false;
+    bool neg = false;
+    if (text[pos] == L'-')
+    {
+        neg = true;
+        ++pos;
+    }
+    if (pos >= text.size() || !iswdigit(text[pos]))
+        return false;
+    long long value = 0;
+    while (pos < text.size() && iswdigit(text[pos]))
+    {
+        value = value * 10 + (text[pos] - L'0');
+        ++pos;
+    }
+    out = neg ? -value : value;
+    return true;
+}
+
+static void ClampState(ChatState& state)
+{
+    if (state.valence < 1)
+        state.valence = 1;
+    if (state.valence > 15)
+        state.valence = 15;
+    if (state.arousal < 1)
+        state.arousal = 1;
+    if (state.arousal > 15)
+        state.arousal = 15;
+    if (state.lastInteraction < 0)
+        state.lastInteraction = 0;
+}
+
+static std::wstring GetStatePath()
+{
+    return GetConfigPath(L"state.json");
+}
+
+static void SaveState(const ChatState& state)
+{
+    const std::wstring configDir = GetExeDir() + L"\\config";
+    CreateDirectoryW(configDir.c_str(), nullptr);
+
+    const std::wstring path = GetStatePath();
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out.is_open())
+        return;
+
+    out << "{\n";
+    out << "  \"last_interaction_time\": " << state.lastInteraction << ",\n";
+    out << "  \"valence\": " << state.valence << ",\n";
+    out << "  \"arousal\": " << state.arousal << "\n";
+    out << "}\n";
+}
+
+static bool TryLoadState(ChatState& out)
+{
+    std::wstring text;
+    if (!ReadFileText(GetStatePath(), text))
+        return false;
+
+    bool any = false;
+    ChatState tmp = out;
+    long long value = 0;
+    if (ParseJsonInt64(text, L"last_interaction_time", value))
+    {
+        tmp.lastInteraction = value;
+        any = true;
+    }
+    if (ParseJsonInt64(text, L"valence", value))
+    {
+        tmp.valence = static_cast<int>(value);
+        any = true;
+    }
+    if (ParseJsonInt64(text, L"arousal", value))
+    {
+        tmp.arousal = static_cast<int>(value);
+        any = true;
+    }
+    if (!any)
+        return false;
+
+    ClampState(tmp);
+    if (tmp.lastInteraction == 0)
+        tmp.lastInteraction = GetUnixTimeSeconds();
+
+    out = tmp;
+    return true;
+}
+
+static void EnsureStateLoaded()
+{
+    if (s_stateLoaded)
+        return;
+
+    ChatState loaded = s_state;
+    if (!TryLoadState(loaded))
+    {
+        loaded.lastInteraction = GetUnixTimeSeconds();
+        ClampState(loaded);
+    }
+    s_state = loaded;
+    s_stateLoaded = true;
+}
+
+struct IdleEntry
+{
+    std::wstring key;
+    std::wstring text;
+};
+
+static bool LoadIdleMap(std::map<std::wstring, std::wstring>& mapOut)
+{
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(GetAssetPath(L"chat\\chat_idle.txt"), lines))
+        return false;
+
+    mapOut.clear();
+    for (const auto& lineRaw : lines)
+    {
+        std::wstring line = Trim(lineRaw);
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t eq = line.find(L'=');
+        if (eq == std::wstring::npos)
+            continue;
+        std::wstring key = Trim(line.substr(0, eq));
+        if (!key.empty() && key.front() == L'\ufeff')
+            key.erase(0, 1);
+        std::wstring value = Trim(line.substr(eq + 1));
+        mapOut[key] = value;
+    }
+    return !mapOut.empty();
+}
+
+static bool LoadIdleLines(std::vector<IdleEntry>& linesOut)
+{
+    std::map<std::wstring, std::wstring> map;
+    if (!LoadIdleMap(map))
+        return false;
+
+    linesOut.clear();
+    for (int i = 1; i <= 5; ++i)
+    {
+        std::wstring key = L"idle_" + std::to_wstring(i);
+        auto it = map.find(key);
+        if (it != map.end() && !it->second.empty())
+            linesOut.push_back({ key, it->second });
+    }
+    return !linesOut.empty();
+}
+
+static bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::wstring& keyUsed)
+{
+    if (key.empty())
+        return false;
+    std::map<std::wstring, std::wstring> map;
+    if (!LoadIdleMap(map))
+        return false;
+
+    std::vector<std::wstring> candidates;
+    for (int i = 1; i <= 10; ++i)
+    {
+        std::wstring k = key + L"_" + std::to_wstring(i);
+        auto it = map.find(k);
+        if (it != map.end() && !it->second.empty())
+            candidates.push_back(it->second);
+    }
+    if (!candidates.empty())
+    {
+        if (!s_idleSeeded)
+        {
+            s_idleSeeded = true;
+            srand(static_cast<unsigned int>(GetTickCount()));
+        }
+        const int idx = rand() % static_cast<int>(candidates.size());
+        out = candidates[static_cast<size_t>(idx)];
+        keyUsed = key + L"_" + std::to_wstring(idx + 1);
+        return true;
+    }
+
+    auto it = map.find(key);
+    if (it == map.end() || it->second.empty())
+        return false;
+    out = it->second;
+    keyUsed = key;
+    return true;
+}
+
+static bool GetRandomIdleLine(IdleEntry& out)
+{
+    std::vector<IdleEntry> idle;
+    if (!LoadIdleLines(idle))
+        return false;
+
+    if (!s_idleSeeded)
+    {
+        s_idleSeeded = true;
+        srand(static_cast<unsigned int>(GetTickCount()));
+    }
+    out = idle[static_cast<size_t>(rand()) % idle.size()];
+    return true;
+}
+
+static void PlayIdleSound(const std::wstring& key)
+{
+    if (key.empty())
+        return;
+    PlayAudioAsset(L"audio\\" + key + L".wav");
+}
+
+static int GetLocalHour()
+{
+    time_t now = time(nullptr);
+    struct tm localTime = {};
+    localtime_s(&localTime, &now);
+    return localTime.tm_hour;
+}
+
+static std::wstring GetIdleOverrideKeyForHour(int hour)
+{
+    const int morning = ReadSettingsInt(L"早安时间", 7);
+    const int lunch = ReadSettingsInt(L"午餐时间", 12);
+    const int dinner = ReadSettingsInt(L"晚餐时间", 18);
+    const int night = ReadSettingsInt(L"晚安时间", 22);
+
+    if (hour == morning)
+        return L"morning";
+    if (hour == lunch)
+        return L"lunch";
+    if (hour == dinner)
+        return L"dinner";
+    if (hour == night)
+        return L"night";
+    return L"";
 }
 
 static bool UpdateDialogMetadata(const std::wstring& path)
@@ -253,6 +626,290 @@ static void PositionTalkWindow(int w, int h)
     SetWindowPos(s_hTalkWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
+static void PositionTaskWindow(int w, int h)
+{
+    int x = g_pet.x;
+    int y = g_pet.y - h - 10;
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    SetWindowPos(s_hTaskWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+static bool IsAppWindow(HWND hwnd)
+{
+    if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
+        return false;
+
+    wchar_t title[256];
+    if (GetWindowTextW(hwnd, title, 256) <= 0)
+        return false;
+
+    wchar_t cls[256];
+    GetClassNameW(hwnd, cls, 256);
+    if (wcscmp(cls, L"PetWindow") == 0 ||
+        wcscmp(cls, L"ChatInputWnd") == 0 ||
+        wcscmp(cls, L"ChatButtonWnd") == 0 ||
+        wcscmp(cls, L"ChatTalkWnd") == 0 ||
+        wcscmp(cls, L"TaskListWnd") == 0)
+        return false;
+
+    LONG ex = GetWindowLongW(hwnd, GWL_EXSTYLE);
+    if (ex & WS_EX_TOOLWINDOW)
+        return false;
+
+    return true;
+}
+
+static BOOL CALLBACK EnumAppWindows(HWND hwnd, LPARAM lParam)
+{
+    auto* list = reinterpret_cast<std::vector<std::wstring>*>(lParam);
+    if (IsAppWindow(hwnd))
+    {
+        wchar_t title[256];
+        GetWindowTextW(hwnd, title, 256);
+        list->push_back(title);
+    }
+    return TRUE;
+}
+
+static void ClearTaskEntries()
+{
+    for (auto& e : s_taskEntries)
+    {
+        if (e.icon)
+            DestroyIcon(e.icon);
+    }
+    s_taskEntries.clear();
+    s_taskSelected = -1;
+    if (s_hKillBtn)
+        ShowWindow(s_hKillBtn, SW_HIDE);
+}
+
+static HICON GetWindowIconByPath(HWND hwnd)
+{
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == 0)
+        return nullptr;
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess)
+        return nullptr;
+
+    wchar_t path[MAX_PATH] = {};
+    DWORD size = MAX_PATH;
+    if (!QueryFullProcessImageNameW(hProcess, 0, path, &size))
+    {
+        CloseHandle(hProcess);
+        return nullptr;
+    }
+    CloseHandle(hProcess);
+
+    SHFILEINFOW sfi = {};
+    if (SHGetFileInfoW(path, 0, &sfi, sizeof(sfi), SHGFI_ICON | SHGFI_SMALLICON))
+        return sfi.hIcon;
+
+    return nullptr;
+}
+
+static void BuildTaskListEntries()
+{
+    DWORD prevPid = s_taskSelectedPid;
+    ClearTaskEntries();
+
+    std::vector<HWND> hwnds;
+    EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
+        auto* list = reinterpret_cast<std::vector<HWND>*>(lParam);
+        if (IsAppWindow(hwnd))
+            list->push_back(hwnd);
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&hwnds));
+
+    std::set<DWORD> uniquePid;
+    for (HWND hwnd : hwnds)
+    {
+        wchar_t title[256];
+        if (GetWindowTextW(hwnd, title, 256) <= 0)
+            continue;
+        std::wstring t = title;
+
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid == 0)
+            continue;
+
+        if (uniquePid.insert(pid).second)
+        {
+            TaskEntry entry;
+            entry.title = t;
+            entry.icon = GetWindowIconByPath(hwnd);
+            entry.pid = pid;
+            s_taskEntries.push_back(entry);
+        }
+    }
+
+    if (prevPid != 0)
+    {
+        for (int i = 0; i < static_cast<int>(s_taskEntries.size()); ++i)
+        {
+            if (s_taskEntries[i].pid == prevPid)
+            {
+                s_taskSelected = i;
+                s_taskSelectedPid = prevPid;
+                return;
+            }
+        }
+        s_taskSelected = -1;
+        s_taskSelectedPid = 0;
+        HideKillButton();
+    }
+}
+
+static bool KillSelectedTask()
+{
+    if (s_taskSelected < 0 || s_taskSelected >= static_cast<int>(s_taskEntries.size()))
+        return false;
+
+    DWORD pid = s_taskEntries[s_taskSelected].pid;
+    if (pid == 0 || pid == GetCurrentProcessId())
+        return false;
+
+    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess)
+        return false;
+
+    BOOL ok = TerminateProcess(hProcess, 0);
+    CloseHandle(hProcess);
+    return ok == TRUE;
+}
+
+static void HideKillButton()
+{
+    if (s_hKillBtn)
+        ShowWindow(s_hKillBtn, SW_HIDE);
+}
+
+static void ShowKillButtonAt(int x, int y)
+{
+    if (!s_hKillBtn)
+        return;
+
+    const int btnW = 90;
+    const int btnH = 26;
+    SetWindowPos(s_hKillBtn, nullptr, x, y, btnW, btnH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    ShowWindow(s_hKillBtn, SW_SHOW);
+}
+
+static LRESULT CALLBACK TaskListProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+    case WM_TIMER:
+        if (wParam == kTaskRefreshTimer)
+        {
+            BuildTaskListEntries();
+            InvalidateRect(hwnd, nullptr, TRUE);
+        }
+        return 0;
+    case WM_LBUTTONDOWN:
+        // 左键任意处收回任务管理器
+        DestroyWindow(hwnd);
+        return 0;
+    case WM_RBUTTONDOWN:
+    {
+        int y = GET_Y_LPARAM(lParam);
+        int index = (y - kTaskPadding) / kTaskLineH;
+        if (index >= 0 && index < static_cast<int>(s_taskEntries.size()))
+        {
+            if (s_taskSelected == index)
+            {
+                s_taskSelected = -1;
+                s_taskSelectedPid = 0;
+                HideKillButton();
+                InvalidateRect(hwnd, nullptr, TRUE);
+                return 0;
+            }
+
+            s_taskSelected = index;
+            s_taskSelectedPid = s_taskEntries[index].pid;
+            InvalidateRect(hwnd, nullptr, TRUE);
+            if (s_hKillBtn)
+                EnableWindow(s_hKillBtn, TRUE);
+
+            // 按钮显示在被选中项右对齐
+            RECT rc;
+            GetClientRect(hwnd, &rc);
+            const int btnW = 90;
+            const int btnH = 26;
+            int itemTop = kTaskPadding + index * kTaskLineH;
+            int bx = rc.right - kTaskPadding - btnW;
+            int by = itemTop + (kTaskLineH - btnH) / 2;
+            ShowKillButtonAt(bx, by);
+        }
+        else
+        {
+            s_taskSelected = -1;
+            HideKillButton();
+        }
+        return 0;
+    }
+    case WM_PAINT:
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        HBRUSH brush = CreateSolidBrush(RGB(255, 240, 245));
+        FillRect(hdc, &rc, brush);
+        DeleteObject(brush);
+
+        if (s_inputFont)
+            SelectObject(hdc, s_inputFont);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(50, 50, 50));
+
+        int x = kTaskPadding;
+        int y = kTaskPadding;
+        for (int i = 0; i < static_cast<int>(s_taskEntries.size()); ++i)
+        {
+            const auto& e = s_taskEntries[i];
+            if (i == s_taskSelected)
+            {
+                RECT sel = { x - 4, y - 2, rc.right - kTaskPadding, y + kTaskLineH };
+                HBRUSH selBrush = CreateSolidBrush(RGB(255, 220, 230));
+                FillRect(hdc, &sel, selBrush);
+                DeleteObject(selBrush);
+            }
+            if (e.icon)
+                DrawIconEx(hdc, x, y + 4, e.icon, kTaskIcon, kTaskIcon, 0, nullptr, DI_NORMAL);
+
+            RECT trc = { x + kTaskIcon + 8, y, rc.right - kTaskPadding, y + kTaskLineH };
+            DrawTextW(hdc, e.title.c_str(), -1, &trc, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+
+            y += kTaskLineH;
+            if (y + kTaskLineH > rc.bottom)
+                break;
+        }
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+    case WM_DESTROY:
+        KillTimer(hwnd, kTaskRefreshTimer);
+        ClearTaskEntries();
+        s_hKillBtn = nullptr;
+        s_hTaskWnd = nullptr;
+        return 0;
+    case WM_COMMAND:
+        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == 1)
+        {
+            if (MessageBoxW(hwnd, L"确定要强行结束该进程吗？", L"清理进程", MB_OKCANCEL | MB_ICONWARNING) == IDOK)
+                KillSelectedTask();
+        }
+        return 0;
+    default:
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+}
 static LRESULT CALLBACK TalkProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
@@ -330,6 +987,8 @@ static LRESULT CALLBACK TalkProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
 // 对话输出
 void ChatTalk(HWND hwnd, const wchar_t* text)
 {
+    if (hwnd)
+        s_mainHwnd = hwnd;
     s_talkText = text ? text : L"";
 
     if (!s_talkFont)
@@ -377,14 +1036,461 @@ void ChatTalk(HWND hwnd, const wchar_t* text)
 }
 
 
+static void ChatShowTaskList(HWND hwndParent)
+{
+    if (!s_inputFont)
+    {
+        s_inputFont = CreateFontW(
+            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+            L"Microsoft YaHei UI");
+    }
+
+    BuildTaskListEntries();
+
+    WNDCLASSW wc = {};
+    wc.lpfnWndProc = TaskListProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"TaskListWnd";
+    static bool registered = false;
+    if (!registered)
+    {
+        RegisterClassW(&wc);
+        registered = true;
+    }
+
+    if (!s_hTaskWnd)
+    {
+        const int width = GetInputWidth();
+        const int height = kTaskHeight;
+        s_hTaskWnd = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+            wc.lpszClassName,
+            nullptr,
+            WS_POPUP,
+            0, 0, width, height,
+            hwndParent,
+            nullptr,
+            GetModuleHandle(NULL),
+            nullptr
+        );
+        SetLayeredWindowAttributes(s_hTaskWnd, 0, 220, LWA_ALPHA);
+    }
+
+    if (!s_hKillBtn)
+    {
+        s_hKillBtn = CreateWindowW(L"BUTTON", L"清理",
+            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            0, 0, 90, 26,
+            s_hTaskWnd, (HMENU)1, GetModuleHandle(NULL), nullptr);
+        if (s_inputFont)
+            SendMessageW(s_hKillBtn, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
+        EnableWindow(s_hKillBtn, FALSE);
+        ShowWindow(s_hKillBtn, SW_HIDE);
+    }
+    else
+    {
+        EnableWindow(s_hKillBtn, FALSE);
+        ShowWindow(s_hKillBtn, SW_HIDE);
+    }
+
+    ChatUpdateTaskListPosition();
+    ShowWindow(s_hTaskWnd, SW_SHOW);
+    InvalidateRect(s_hTaskWnd, nullptr, TRUE);
+    int refreshSec = ReadSettingsInt(L"任务刷新秒", 5);
+    if (refreshSec < 1) refreshSec = 1;
+    if (refreshSec > 60) refreshSec = 60;
+    SetTimer(s_hTaskWnd, kTaskRefreshTimer, refreshSec * 1000, nullptr);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // 文字输入处理逻辑
 void ChatHandleInput(HWND hwnd, const std::wstring& input)
 {
+    ChatRecordInteraction();
+
     if (s_dialogMap.empty() || DialogFileChanged())
         LoadDialogConfig();
 
     const std::wstring normalized = Trim(input);
     auto it = s_dialogMap.find(normalized);
+
+    if (IsTaskListTrigger(normalized))
+    {
+        ChatShowTaskList(hwnd);
+        return;
+    }
 
     // 特殊关键词：我爱你
     if (normalized == L"我爱你")
@@ -392,32 +1498,36 @@ void ChatHandleInput(HWND hwnd, const std::wstring& input)
         if (it != s_dialogMap.end())
             ChatTalk(hwnd, it->second.c_str());
         else
-            ChatTalk(hwnd, L"要结束病娇游戏吗？"); //未配置输出语句时的默认输出
+            ChatTalk(hwnd, L"要结束病娇游戏吗？"); // 未配置输出语句时的默认输出
+
         // 弹出按钮输入
         ChatShowButtonInput(hwnd, L"我爱你_1", L"我爱你_2");
+        return;
     }
+
+    // 普通输入
+    if (it != s_dialogMap.end())
+        ChatTalk(hwnd, it->second.c_str());
     else
     {
-        // 普通输入
-        if (it != s_dialogMap.end())
-            ChatTalk(hwnd, it->second.c_str());
+        auto def = s_dialogMap.find(L"默认");
+        if (def != s_dialogMap.end())
+            ChatTalk(hwnd, def->second.c_str());
         else
-        {
-            auto def = s_dialogMap.find(L"默认");
-            if (def != s_dialogMap.end())
-                ChatTalk(hwnd, def->second.c_str());
-            else
-                ChatTalk(hwnd, L"……我不太明白你在说什么。");
-        }
+            ChatTalk(hwnd, L"……我不太明白你在说什么。");
     }
 }
-
 
 // 按钮输入处理逻辑
 static void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
 {
+    ChatRecordInteraction();
+
     if (s_buttonMap.empty())
         LoadDialogConfig();
+
+    if (!s_mainHwnd)
+        s_mainHwnd = GetParent(buttonWnd);
 
     auto it = s_buttonMap.find(key);
     if (it != s_buttonMap.end())
@@ -426,9 +1536,17 @@ static void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
     DestroyWindow(buttonWnd);
     s_hButtonWnd = nullptr;
 
-    // 点击按钮后：先显示文本，确认后再退出进程
+    // 点击按钮后：先显示文本，确认后延时退出进程
     if (key == L"我爱你_2")
-        PostQuitMessage(0);
+    {
+        if (s_quitTimer)
+        {
+            DeleteTimerQueueTimer(nullptr, s_quitTimer, nullptr);
+            s_quitTimer = nullptr;
+        }
+        CreateTimerQueueTimer(&s_quitTimer, nullptr, QuitTimerProc, nullptr,
+            kQuitDelayMs, 0, WT_EXECUTEDEFAULT);
+    }
 }
 
 static std::wstring GetButtonLabel(const std::wstring& key, const std::wstring& fallback)
@@ -436,7 +1554,6 @@ static std::wstring GetButtonLabel(const std::wstring& key, const std::wstring& 
     auto it = s_buttonLabelMap.find(key);
     return (it != s_buttonLabelMap.end()) ? it->second : fallback;
 }
-
 
 // 文字输入窗口过程
 static LRESULT CALLBACK TextInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -543,7 +1660,6 @@ static LRESULT CALLBACK TextInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
         InvalidateRect(hwnd, nullptr, TRUE);
         return 0;
     }
-
     case WM_DESTROY:
         if (!s_inputText.empty())
         {
@@ -556,7 +1672,6 @@ static LRESULT CALLBACK TextInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     }
     return 0;
 }
-
 
 // 按钮输入窗口过程
 static LRESULT CALLBACK ButtonInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -593,7 +1708,6 @@ static LRESULT CALLBACK ButtonInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPAR
     }
     return 0;
 }
-
 
 // 显示文字输入窗口
 void ChatShowInput(HWND hwndParent)
@@ -683,6 +1797,80 @@ void ChatUpdateTalkPosition()
     PositionTalkWindow(w, h);
 }
 
+void ChatUpdateTaskListPosition()
+{
+    if (!s_hTaskWnd)
+        return;
+
+    const int width = GetInputWidth();
+    const int height = kTaskHeight;
+    PositionTaskWindow(width, height);
+}
+
+void ChatRecordInteraction()
+{
+    EnsureStateLoaded();
+    s_state.lastInteraction = GetUnixTimeSeconds();
+}
+
+void ChatTickIdleCheck(HWND hwnd)
+{
+    EnsureStateLoaded();
+
+    // 允许外部手动修改 valence / arousal
+    ChatState fileState = s_state;
+    if (TryLoadState(fileState))
+    {
+        s_state.valence = fileState.valence;
+        s_state.arousal = fileState.arousal;
+        s_state.lastInteraction = fileState.lastInteraction;
+    }
+
+    const int valence = s_state.valence;
+    const int arousal = s_state.arousal;
+    int thresholdMinutes = (15 - arousal) * (15 - valence);
+    if (thresholdMinutes < 0)
+        thresholdMinutes = 0;
+    const long long thresholdSeconds = static_cast<long long>(thresholdMinutes) * 60;
+
+    const long long now = GetUnixTimeSeconds();
+    if (now - s_state.lastInteraction < thresholdSeconds)
+        return;
+
+    const int hour = GetLocalHour();
+    const std::wstring overrideKey = GetIdleOverrideKeyForHour(hour);
+    if (!overrideKey.empty())
+    {
+        std::wstring text;
+        std::wstring keyUsed;
+        if (GetIdleTextByKey(overrideKey, text, keyUsed))
+        {
+            ChatTalk(hwnd, text.c_str());
+            PlayIdleSound(keyUsed);
+            s_state.lastInteraction = now;
+            return;
+        }
+    }
+
+    IdleEntry idle;
+    if (!GetRandomIdleLine(idle))
+        return;
+
+    ChatTalk(hwnd, idle.text.c_str());
+    PlayIdleSound(idle.key);
+
+    // 避免每分钟重复触发：触发后视作“被动互动”刷新时间戳
+    s_state.lastInteraction = now;
+}
+
+void ChatGetStateSnapshot(long long& lastInteraction, int& valence, int& arousal)
+{
+    EnsureStateLoaded();
+    lastInteraction = s_state.lastInteraction;
+    valence = s_state.valence;
+    arousal = s_state.arousal;
+}
+
 // 显示按钮输入窗口
 void ChatShowButtonInput(HWND hwndParent, const std::wstring& key1, const std::wstring& key2)
 {
@@ -699,7 +1887,6 @@ void ChatShowButtonInput(HWND hwndParent, const std::wstring& key1, const std::w
     static bool registered = false;
     if (!registered)
     {
-        RegisterClassW(&wc);
         RegisterClassW(&wc);
         registered = true;
     }

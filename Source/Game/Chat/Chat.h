@@ -11,5 +11,13 @@ void ChatUpdateInputPosition();
 void ChatUpdateTalkPosition();
 // 宠物移动时调用，用来同步按钮栏位置
 void ChatUpdateButtonPosition();
+// 宠物移动时调用，用来同步任务列表窗口位置
+void ChatUpdateTaskListPosition();
+// 记录一次互动时间并写入 state.json
+void ChatRecordInteraction();
+// 每分钟检查是否需要触发闲聊
+void ChatTickIdleCheck(HWND hwnd);
+// 获取当前聊天状态快照（用于程序退出写入）
+void ChatGetStateSnapshot(long long& lastInteraction, int& valence, int& arousal);
 // 根据输入内容执行相应的对话逻辑
 void ChatHandleInput(HWND hwnd, const std::wstring& input);

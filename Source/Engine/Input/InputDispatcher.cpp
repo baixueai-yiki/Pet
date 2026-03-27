@@ -2,6 +2,7 @@
 #include "../../Game/Chat/Chat.h"
 #include "../../Game/Pet/Pet.h"
 #include "../../Core/Path.h"
+#include "../../Game/Audio/Audio.h"
 #include <cwctype>
 #include <fstream>
 #include <sstream>
@@ -11,6 +12,7 @@
 #include <windowsx.h>  // contains GET_X_LPARAM, etc.
 
 extern PetState g_pet;
+
 
 // 判断给定点是否落在当前宠物绘制区域，用于拖拽和点击判断
 static bool IsInsidePet(int x, int y)
@@ -60,6 +62,36 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
 
 // 记录最近六次右键点击时间，用于识别“慢三连+快三连”组合
 static DWORD s_rightClickTimes[6] = {};
+static bool s_audioSeeded = false;
+static bool s_leftDown = false;
+static bool s_dragMoved = false;
+static bool s_dragInteractionLogged = false;
+static int s_downX = 0;
+static int s_downY = 0;
+static unsigned long long s_pokeCount = 0;
+
+unsigned long long GetPokeCount()
+{
+    return s_pokeCount;
+}
+
+static void PlayRandomPokeSound()
+{
+    if (!s_audioSeeded)
+    {
+        s_audioSeeded = true;
+        srand(static_cast<unsigned int>(GetTickCount()));
+    }
+
+    static const wchar_t* kSounds[] = {
+        L"audio\\poke_nya.wav",
+        L"audio\\poke_find.wav",
+        L"audio\\poke_ah.wav",
+        L"audio\\poke_poke.wav"
+    };
+    const int idx = rand() % (sizeof(kSounds) / sizeof(kSounds[0]));
+    PlayAudioAsset(kSounds[idx]);
+}
 
 static std::wstring Trim(const std::wstring& s)
 {
@@ -123,6 +155,24 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
     case WM_MOUSEMOVE:
     {
+        if (s_leftDown && !g_pet.isDragging)
+        {
+            const int dx = x - s_downX;
+            const int dy = y - s_downY;
+            if ((dx * dx + dy * dy) > 9)
+            {
+                g_pet.isDragging = true;
+                s_dragMoved = true;
+                if (!s_dragInteractionLogged)
+                {
+                    s_dragInteractionLogged = true;
+                    ChatRecordInteraction();
+                }
+                g_pet.dragOffsetX = s_downX - g_pet.x;
+                g_pet.dragOffsetY = s_downY - g_pet.y;
+            }
+        }
+
         // 拖拽时更新宠物位置并触发重绘
         if (g_pet.isDragging)
         {
@@ -131,6 +181,7 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             ChatUpdateInputPosition();
             ChatUpdateTalkPosition();
             ChatUpdateButtonPosition();
+            ChatUpdateTaskListPosition();
             InvalidateRect(hwnd, nullptr, TRUE);
         }
 
@@ -142,15 +193,26 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // 只有点击在宠物区域内才开始拖拽
         if (IsInsidePet(x, y))
         {
-            g_pet.isDragging = true;
-            g_pet.dragOffsetX = x - g_pet.x;
-            g_pet.dragOffsetY = y - g_pet.y;
+            s_leftDown = true;
+            s_dragMoved = false;
+            s_dragInteractionLogged = false;
+            s_downX = x;
+            s_downY = y;
         }
         break;
     }
 
     case WM_LBUTTONUP:
         // 松开左键结束拖拽
+        if (s_leftDown && !s_dragMoved && IsInsidePet(x, y))
+        {
+            ++s_pokeCount;
+            PlayRandomPokeSound();
+            ChatRecordInteraction();
+        }
+        s_leftDown = false;
+        s_dragMoved = false;
+        s_dragInteractionLogged = false;
         g_pet.isDragging = false;
         InvalidateRect(hwnd, nullptr, TRUE);
         break;

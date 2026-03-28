@@ -1,1 +1,128 @@
-﻿
+﻿# 国产/二游
+GenshinImpact=又在旅行了吗？别忘了休息一下。
+YuanShen=今天也在提瓦特吗？我会等你回来。
+StarRail=列车又启程了呀，记得别太累。
+ZenlessZoneZero=又要去新艾利都了吗？注意休息。
+Honkai3=又在崩坏里战斗呀，记得喝点水。
+
+# 竞技射击 / MOBA / 大逃杀
+League of Legends=又开排位了吗？别太上头。
+VALORANT-Win64-Shipping=在瓦洛兰特里对枪吗？注意休息。
+cs2=开了CS2吗？我在等你。
+dota2=DOTA2开局了吗？别打太晚。
+r5apex=Apex又开枪了？记得放松一下。
+FortniteClient-Win64-Shipping=吃鸡进行中吗？加油，但要休息。
+RainbowSix=彩虹六号出动中？别太紧张。
+
+# 开放世界 / 动作冒险
+GTA5=洛圣都又热闹了呀。
+RDR2=西部旅途开始了吗？注意别太晚。
+Cyberpunk2077=夜之城又亮起来了。
+HogwartsLegacy=霍格沃茨又开学了？
+TheWitcher3=猎魔人又上路了。
+SkyrimSE=天际又下雪了呀。
+Fallout4=废土之旅开始了吗？
+
+# 魂系 / 高难动作
+eldenring=又去交界地了？小心别太累。
+sekiro=只狼又在练刀吗？我有点担心你。
+DarkSoulsIII=黑魂3开局了？慢慢来。
+Hades=又下冥府了吗？注意休息。
+Hades2=冥界2开局了呀。
+DeadCells=细胞又要冲关吗？别太久。
+Cuphead=杯头又开打了？小心别累。
+HollowKnight=空洞骑士又出发了吗？
+Celeste=蔚蓝爬山中？慢慢来就好。
+SlayTheSpire=杀戮尖塔又开局？别太久。
+
+# 共斗 / ARPG
+MonsterHunterWorld=在怪物猎人世界？祝你顺利。
+MonsterHunterRise=又去狩猎了吗？注意休息。
+NarakaBladepoint=永劫无间开了？别打太久。
+Destiny2=守护者出发了？记得休息。
+Warframe.x64=战甲又出动了吗？我在等你。
+
+# 模拟经营 / 生存建造
+Minecraft=在建新的世界吗？我有点好奇。
+Terraria=泰拉瑞亚又挖矿啦？
+StardewValley=在星露谷度日吗？真好。
+RimWorldWin64=环世界又建基地啦？
+Factorio=异星工厂又开工了？
+Satisfactory=又在工厂里忙吗？注意休息。
+Valheim=瓦尔海姆又航行了？
+ProjectZomboid64=僵尸末日求生中？
+DontStarveTogether=饥荒联机又开始了？
+Subnautica=深海探险又开始了？
+
+# 其他
+BG3=博德之门在冒险吗？别太累。
+Palworld-Win64-Shipping=帕鲁世界又开始了呀。
+OriAndTheWillOfTheWisps=奥日的旅途还顺利吗？
+AmongUs=又在太空里找内鬼吗？
+RobloxPlayerBeta=在玩Roblox？别太久哦。
+
+
+
+# 日记（monitor_game）
+# 国产/二游
+diary_GenshinImpact=今天你又回到了提瓦特。
+diary_YuanShen=你今天又在原神里旅行。
+diary_StarRail=你今天又上了星穹列车。
+diary_ZenlessZoneZero=你今天又去了新艾利都。
+diary_Honkai3=你今天又在崩坏里战斗。
+
+# 竞技射击 / MOBA / 大逃杀
+diary_League of Legends=你今天又开了一局排位。
+diary_VALORANT-Win64-Shipping=你今天又在瓦洛兰特里对枪。
+diary_cs2=你今天又开了CS2。
+diary_dota2=你今天又打了一局DOTA2。
+diary_r5apex=你今天又在Apex里奔跑。
+diary_FortniteClient-Win64-Shipping=你今天又在战场里拼到很晚。
+diary_RainbowSix=你今天又在彩虹六号里战斗。
+
+# 开放世界 / 动作冒险
+diary_GTA5=你今天又去了洛圣都。
+diary_RDR2=你今天又在西部旅途上。
+diary_Cyberpunk2077=你今天又走进了夜之城。
+diary_HogwartsLegacy=你今天又回到了霍格沃茨。
+diary_TheWitcher3=你今天又跟随猎魔人上路。
+diary_SkyrimSE=你今天又在天际走了一圈。
+diary_Fallout4=你今天又踏进了废土。
+
+# 魂系 / 高难动作
+diary_eldenring=你今天又踏入了交界地。
+diary_sekiro=你今天又在练习刀法。
+diary_DarkSoulsIII=你今天又挑战了黑魂3。
+diary_Hades=你今天又闯进了冥界。
+diary_Hades2=你今天又在冥界2里前行。
+diary_DeadCells=你今天又冲关到很晚。
+diary_Cuphead=你今天又在杯头里挑战Boss。
+diary_HollowKnight=你今天又踏上空洞之旅。
+diary_Celeste=你今天又在蔚蓝攀登。
+diary_SlayTheSpire=你今天又爬上了尖塔。
+
+# 共斗 / ARPG
+diary_MonsterHunterWorld=你今天又开始狩猎了。
+diary_MonsterHunterRise=你今天又在崛起里奔波。
+diary_NarakaBladepoint=你今天又在永劫无间里对决。
+diary_Destiny2=你今天又以守护者的身份出发。
+diary_Warframe.x64=你今天又驾驶战甲出动。
+
+# 模拟经营 / 生存建造
+diary_Minecraft=你今天又在搭建属于你的世界。
+diary_Terraria=你今天又在泰拉瑞亚挖矿。
+diary_StardewValley=你今天又在星露谷度过一天。
+diary_RimWorldWin64=你今天又在环世界建基地。
+diary_Factorio=你今天又在异星工厂忙碌。
+diary_Satisfactory=你今天又在工厂里忙到很晚。
+diary_Valheim=你今天又在瓦尔海姆航行。
+diary_ProjectZomboid64=你今天又在僵尸世界坚持。
+diary_DontStarveTogether=你今天又在饥荒里求生。
+diary_Subnautica=你今天又开始了深海探险。
+
+# 其他
+diary_BG3=你今天又在博德之门冒险。
+diary_Palworld-Win64-Shipping=你今天又去了帕鲁世界。
+diary_OriAndTheWillOfTheWisps=你今天又和奥日一起旅行。
+diary_AmongUs=你今天又在太空里找内鬼。
+diary_RobloxPlayerBeta=你今天又在Roblox里玩耍。

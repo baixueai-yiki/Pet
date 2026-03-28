@@ -1,4 +1,9 @@
-﻿#pragma once
+#pragma once
+#include <string>
 
-// 程序退出时统一处理退出逻辑（写入state.json与diary.txt）
+// Program start: clear diary_writing.txt
+void OnProgramStart();
+// Program exit: write state.json and append to diary.txt
 void OnProgramExit();
+// Append one line to diary_writing.txt
+void DiaryAppendWritingLine(const std::wstring& line);

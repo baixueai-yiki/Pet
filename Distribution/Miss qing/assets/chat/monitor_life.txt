@@ -1,4 +1,3 @@
-Wexin=我看到你打开了Wexin
 微信=我看到你打开了微信
-QQ.exe=又在聊天呀
-chrome.exe=上网也要注意休息
+QQ=又在聊天呀
+chrome=上网也要注意休息

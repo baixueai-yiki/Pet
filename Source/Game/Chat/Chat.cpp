@@ -3,6 +3,7 @@
 #include <imm.h>
 #include "Chat.h"
 #include "Core/Path.h"
+#include "Core/Diary.h"
 #include "../../Game/Pet/Pet.h"
 #include "../../Engine/Input/InputDispatcher.h"
 #include <string>
@@ -80,7 +81,11 @@ static int s_taskSelected = -1;
 static HWND s_hKillBtn = nullptr;
 static DWORD s_taskSelectedPid = 0;
 static std::set<std::wstring> s_gameActiveKeys;
+static std::set<std::wstring> s_gameActiveGameKeys;
+static std::set<std::wstring> s_gameActiveWorkKeys;
 static int s_monitorState = 0;
+static std::set<std::wstring> s_diaryLoggedCategories;
+static std::map<std::wstring, int> s_diaryCategoryCounts;
 static HFONT s_talkFont = nullptr;
 static const int kTalkMaxWidth = 240;
 static const int kTalkPadding = 8;
@@ -439,6 +444,104 @@ static bool LoadIdleLines(std::vector<IdleEntry>& linesOut)
     return !linesOut.empty();
 }
 
+static void LoadDiaryMapFromFile(const std::wstring& file, std::map<std::wstring, std::wstring>& out)
+{
+    std::vector<std::wstring> lines;
+    const std::wstring path = (file == L"diary_script.txt")
+        ? GetConfigPath(file)
+        : GetAssetPath(L"chat\\" + file);
+    if (!ReadFileLines(path, lines))
+        return;
+
+    for (const auto& lineRaw : lines)
+    {
+        std::wstring line = Trim(lineRaw);
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t sep = line.find(L'=');
+        if (sep == std::wstring::npos)
+            sep = line.find(L':');
+        if (sep == std::wstring::npos)
+            continue;
+        std::wstring key = Trim(line.substr(0, sep));
+        if (!key.empty() && key.front() == L'\ufeff')
+            key.erase(0, 1);
+        std::wstring value = Trim(line.substr(sep + 1));
+        if (!key.empty() && !value.empty() && key.rfind(L"diary_", 0) == 0)
+            out[key] = value;
+    }
+}
+
+static bool LoadDiaryScriptMap(std::map<std::wstring, std::wstring>& out)
+{
+    out.clear();
+    // 先读 diary_script.txt
+    LoadDiaryMapFromFile(L"diary_script.txt", out);
+    // 再读 monitor_game.txt（允许把 diary_ 写在这里）
+    LoadDiaryMapFromFile(L"monitor_game.txt", out);
+    return !out.empty();
+}
+
+static std::wstring GetDiaryCategoryForKey(const std::wstring& key)
+{
+    if (key.rfind(L"idle_", 0) == 0)
+        return L"idle";
+    if (key.rfind(L"sleep_", 0) == 0)
+        return L"sleep";
+    if (key.rfind(L"morning_", 0) == 0 ||
+        key.rfind(L"lunch_", 0) == 0 ||
+        key.rfind(L"dinner_", 0) == 0 ||
+        key.rfind(L"night_", 0) == 0)
+        return L"greeting";
+    return L"";
+}
+
+static void TryAppendDiaryForKey(const std::wstring& key)
+{
+    if (key.empty())
+        return;
+    const std::wstring category = GetDiaryCategoryForKey(key);
+    if (category.empty())
+        return;
+    if (s_diaryLoggedCategories.find(category) != s_diaryLoggedCategories.end())
+        return;
+
+    std::map<std::wstring, std::wstring> map;
+    if (!LoadDiaryScriptMap(map))
+        return;
+
+    const std::wstring diaryKey = L"diary_" + key;
+    auto it = map.find(diaryKey);
+    if (it == map.end() || it->second.empty())
+        return;
+
+    DiaryAppendWritingLine(it->second);
+    s_diaryLoggedCategories.insert(category);
+}
+
+static void TryAppendDiaryForKeyword(const std::wstring& key, const std::wstring& category, int maxCount)
+{
+    if (key.empty())
+        return;
+    if (category.empty() || maxCount <= 0)
+        return;
+    int& count = s_diaryCategoryCounts[category];
+    if (count >= maxCount)
+        return;
+
+    std::map<std::wstring, std::wstring> map;
+    if (!LoadDiaryScriptMap(map))
+        return;
+
+    const std::wstring diaryKey = L"diary_" + key;
+    auto it = map.find(diaryKey);
+    if (it == map.end() || it->second.empty())
+        return;
+
+    DiaryAppendWritingLine(it->second);
+    ++count;
+}
+
 static bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::wstring& keyUsed)
 {
     if (key.empty())
@@ -654,48 +757,83 @@ static bool CheckGameKeywords(HWND hwnd)
 {
     std::map<std::wstring, std::wstring> lifeMap;
     LoadKeywordMap(L"monitor_life.txt", lifeMap);
+    std::map<std::wstring, std::wstring> gameMap;
+    std::map<std::wstring, std::wstring> workMap;
+    LoadKeywordMap(L"monitor_game.txt", gameMap);
+    LoadKeywordMap(L"monitor_work.txt", workMap);
 
     UpdateMonitorState();
 
     if (s_taskEntries.empty())
     {
         s_gameActiveKeys.clear();
+        s_gameActiveGameKeys.clear();
+        s_gameActiveWorkKeys.clear();
         return false;
     }
-
-    if (lifeMap.empty())
-        return false;
 
     std::set<std::wstring> current;
+    std::set<std::wstring> currentGame;
+    std::set<std::wstring> currentWork;
     const std::wstring* reply = nullptr;
-    for (const auto& kv : lifeMap)
+    std::wstring matchedKey;
+    std::wstring matchedCategory;
+    auto ScanMap = [&](const std::map<std::wstring, std::wstring>& map,
+                       std::set<std::wstring>& currentOut,
+                       std::set<std::wstring>& activeSet,
+                       const std::wstring& category,
+                       const std::wstring** outReply,
+                       std::wstring* outKey,
+                       std::wstring* outCategory)
     {
-        const std::wstring keyLower = ToLowerCopy(kv.first);
-        bool found = false;
-        for (const auto& entry : s_taskEntries)
+        for (const auto& kv : map)
         {
-            const std::wstring nameLower = ToLowerCopy(entry.processName);
-            const std::wstring titleLower = ToLowerCopy(entry.title);
-            if ((!nameLower.empty() && nameLower.find(keyLower) != std::wstring::npos) ||
-                (!titleLower.empty() && titleLower.find(keyLower) != std::wstring::npos))
+            const std::wstring keyLower = ToLowerCopy(kv.first);
+            bool found = false;
+            for (const auto& entry : s_taskEntries)
             {
-                found = true;
-                break;
+                const std::wstring nameLower = ToLowerCopy(entry.processName);
+                const std::wstring titleLower = ToLowerCopy(entry.title);
+                if ((!nameLower.empty() && nameLower.find(keyLower) != std::wstring::npos) ||
+                    (!titleLower.empty() && titleLower.find(keyLower) != std::wstring::npos))
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (found)
+            {
+                currentOut.insert(kv.first);
+                if (!*outReply && activeSet.find(kv.first) == activeSet.end())
+                {
+                    *outReply = &kv.second;
+                    *outKey = kv.first;
+                    *outCategory = category;
+                }
             }
         }
-        if (found)
-        {
-            current.insert(kv.first);
-            if (!reply && s_gameActiveKeys.find(kv.first) == s_gameActiveKeys.end())
-                reply = &kv.second;
-        }
-    }
+    };
+
+    // 优先工作，其次游戏，最后日常
+    if (!workMap.empty())
+        ScanMap(workMap, currentWork, s_gameActiveWorkKeys, L"work", &reply, &matchedKey, &matchedCategory);
+    if (!reply && !gameMap.empty())
+        ScanMap(gameMap, currentGame, s_gameActiveGameKeys, L"game", &reply, &matchedKey, &matchedCategory);
+    if (!reply && !lifeMap.empty())
+        ScanMap(lifeMap, current, s_gameActiveKeys, L"life", &reply, &matchedKey, &matchedCategory);
 
     s_gameActiveKeys = std::move(current);
+    s_gameActiveGameKeys = std::move(currentGame);
+    s_gameActiveWorkKeys = std::move(currentWork);
 
     if (reply)
     {
         ChatTalk(hwnd, reply->c_str());
+        // work/game 共用一次配额，life 单独两次配额
+        if (matchedCategory == L"work" || matchedCategory == L"game")
+            TryAppendDiaryForKeyword(matchedKey, L"work_game", 1);
+        else
+            TryAppendDiaryForKeyword(matchedKey, L"life", 2);
         return true;
     }
     return false;
@@ -2095,6 +2233,7 @@ void ChatTickIdleCheck(HWND hwnd)
         {
             ChatTalk(hwnd, text.c_str());
             PlayIdleSound(keyUsed);
+            TryAppendDiaryForKey(keyUsed);
             s_state.lastInteraction = now;
             return;
         }
@@ -2115,6 +2254,7 @@ void ChatTickIdleCheck(HWND hwnd)
 
     ChatTalk(hwnd, idle.text.c_str());
     PlayIdleSound(idle.key);
+    TryAppendDiaryForKey(idle.key);
 
     if (sleepMode)
     {

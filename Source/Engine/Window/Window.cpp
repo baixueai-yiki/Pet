@@ -115,6 +115,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // Use a timer to keep drag redraw smooth
         SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
         SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
+        OnProgramStart();
         break;
 
 

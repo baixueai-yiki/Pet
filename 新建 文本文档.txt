@@ -33,3 +33,45 @@ Source/
 
 /Build
 
+
+
+
+
+
+
+Source/
+│
+├── Core（纯工具，不参与逻辑）
+│   ├── Path
+│   ├── File
+│   ├── Time
+│   └── Random
+│
+├── Engine（底层能力）
+│   ├── Window
+│   ├── Renderer
+│   ├── Input
+│   └── Audio   ←（现在其实缺这个独立层）
+│
+├── Runtime（新增，核心调度层）
+│   ├── EventBus        ←（核心！解耦）
+│   ├── StateManager    ←（state.json）
+│   └── Scheduler       ←（idle / 时间驱动）
+│
+├── Systems（新增，系统层）
+│   ├── ChatSystem      ←（纯逻辑，不管UI）
+│   ├── MonitorSystem   ←（进程检测）
+│   ├── DiarySystem
+│   └── InteractionSystem（点击/拖拽/输入行为）
+│
+├── UI（把界面从逻辑剥离）
+│   ├── PetView         ← 桌宠显示
+│   ├── ChatBubble
+│   ├── InputBox
+│   └── TaskManagerView
+│
+├── Game（只放“角色”）
+│   └── Pet
+│        └── PetState（valence / arousal / flags）
+│
+└── Main

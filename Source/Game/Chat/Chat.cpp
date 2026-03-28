@@ -18,6 +18,7 @@
 #include <chrono>
 #include <ctime>
 #include <cwctype>
+#include <tlhelp32.h>
 #include "Game/Audio/Audio.h"
 
 // 全局静态状态（仅当前 cpp 使用）
@@ -72,11 +73,14 @@ struct TaskEntry
     std::wstring title;
     HICON icon;
     DWORD pid;
+    std::wstring processName;
 };
 static std::vector<TaskEntry> s_taskEntries;
 static int s_taskSelected = -1;
 static HWND s_hKillBtn = nullptr;
 static DWORD s_taskSelectedPid = 0;
+static std::set<std::wstring> s_gameActiveKeys;
+static int s_monitorState = 0;
 static HFONT s_talkFont = nullptr;
 static const int kTalkMaxWidth = 240;
 static const int kTalkPadding = 8;
@@ -114,6 +118,9 @@ static bool IsTaskListTrigger(const std::wstring& text)
 
 // forward decls
 static void HideKillButton();
+static bool IsAppWindow(HWND hwnd);
+void ChatTalk(HWND hwnd, const wchar_t* text);
+static void BuildTaskListEntries();
 
 static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines);
 static std::wstring Trim(const std::wstring& text);
@@ -176,12 +183,42 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
     if (data.empty())
         return true;
 
+    auto IsLikelyUtf8 = [](const std::string& s) -> bool
+    {
+        size_t i = 0;
+        const size_t n = s.size();
+        while (i < n)
+        {
+            unsigned char c = static_cast<unsigned char>(s[i]);
+            if (c <= 0x7F)
+            {
+                ++i;
+                continue;
+            }
+            size_t need = 0;
+            if ((c & 0xE0) == 0xC0) need = 1;
+            else if ((c & 0xF0) == 0xE0) need = 2;
+            else if ((c & 0xF8) == 0xF0) need = 3;
+            else return false;
+            if (i + need >= n) return false;
+            for (size_t j = 1; j <= need; ++j)
+            {
+                unsigned char cc = static_cast<unsigned char>(s[i + j]);
+                if ((cc & 0xC0) != 0x80) return false;
+            }
+            i += need + 1;
+        }
+        return true;
+    };
+
     bool utf8 = (data.size() >= 3 &&
                  static_cast<unsigned char>(data[0]) == 0xEF &&
                  static_cast<unsigned char>(data[1]) == 0xBB &&
                  static_cast<unsigned char>(data[2]) == 0xBF);
     if (utf8)
         data.erase(0, 3);
+    else if (IsLikelyUtf8(data))
+        utf8 = true;
 
     UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
     int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
@@ -439,18 +476,29 @@ static bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::ws
     return true;
 }
 
-static bool GetRandomIdleLine(IdleEntry& out)
+static bool GetRandomVariantLine(const std::wstring& baseKey, int maxIndex, IdleEntry& out)
 {
-    std::vector<IdleEntry> idle;
-    if (!LoadIdleLines(idle))
+    if (baseKey.empty() || maxIndex <= 0)
         return false;
-
+    std::map<std::wstring, std::wstring> map;
+    if (!LoadIdleMap(map))
+        return false;
+    std::vector<IdleEntry> variants;
+    for (int i = 1; i <= maxIndex; ++i)
+    {
+        std::wstring key = baseKey + L"_" + std::to_wstring(i);
+        auto it = map.find(key);
+        if (it != map.end() && !it->second.empty())
+            variants.push_back({ key, it->second });
+    }
+    if (variants.empty())
+        return false;
     if (!s_idleSeeded)
     {
         s_idleSeeded = true;
         srand(static_cast<unsigned int>(GetTickCount()));
     }
-    out = idle[static_cast<size_t>(rand()) % idle.size()];
+    out = variants[static_cast<size_t>(rand()) % variants.size()];
     return true;
 }
 
@@ -459,6 +507,198 @@ static void PlayIdleSound(const std::wstring& key)
     if (key.empty())
         return;
     PlayAudioAsset(L"audio\\" + key + L".wav");
+}
+
+static std::wstring ToLowerCopy(std::wstring s)
+{
+    for (auto& ch : s)
+        ch = static_cast<wchar_t>(towlower(ch));
+    return s;
+}
+
+static std::wstring GetProcessNameByPid(DWORD pid)
+{
+    if (pid == 0)
+        return L"";
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!hProcess)
+        return L"";
+    wchar_t path[MAX_PATH] = {};
+    DWORD size = MAX_PATH;
+    if (!QueryFullProcessImageNameW(hProcess, 0, path, &size))
+    {
+        CloseHandle(hProcess);
+        return L"";
+    }
+    CloseHandle(hProcess);
+    const wchar_t* name = wcsrchr(path, L'\\');
+    return name ? (name + 1) : path;
+}
+
+static bool LoadKeywordMap(const std::wstring& file, std::map<std::wstring, std::wstring>& out)
+{
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(GetAssetPath(L"chat\\" + file), lines))
+        return false;
+
+    out.clear();
+    for (const auto& lineRaw : lines)
+    {
+        std::wstring line = Trim(lineRaw);
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t sep = line.find(L'=');
+        if (sep == std::wstring::npos)
+            sep = line.find(L':');
+        if (sep == std::wstring::npos)
+            continue;
+        std::wstring key = Trim(line.substr(0, sep));
+        if (!key.empty() && key.front() == L'\ufeff')
+            key.erase(0, 1);
+        std::wstring value = Trim(line.substr(sep + 1));
+        if (!key.empty() && !value.empty())
+            out[key] = value;
+    }
+    return !out.empty();
+}
+
+static bool MatchAnyKeyword(const std::map<std::wstring, std::wstring>& map)
+{
+    for (const auto& kv : map)
+    {
+        const std::wstring keyLower = ToLowerCopy(kv.first);
+        for (const auto& entry : s_taskEntries)
+        {
+            const std::wstring nameLower = ToLowerCopy(entry.processName);
+            const std::wstring titleLower = ToLowerCopy(entry.title);
+            if ((!nameLower.empty() && nameLower.find(keyLower) != std::wstring::npos) ||
+                (!titleLower.empty() && titleLower.find(keyLower) != std::wstring::npos))
+                return true;
+        }
+    }
+    return false;
+}
+
+// 每分钟根据当前运行进程更新状态（0/1/2）
+static void UpdateMonitorState()
+{
+    // 用当前任务列表的进程名做匹配（可见窗口对应的进程）
+    BuildTaskListEntries();
+    if (s_taskEntries.empty())
+    {
+        s_monitorState = 0;
+        return;
+    }
+
+    std::map<std::wstring, std::wstring> gameMap;
+    std::map<std::wstring, std::wstring> workMap;
+    LoadKeywordMap(L"monitor_game.txt", gameMap);
+    LoadKeywordMap(L"monitor_work.txt", workMap);
+
+    const bool hasWork = MatchAnyKeyword(workMap);
+    const bool hasGame = MatchAnyKeyword(gameMap);
+    if (hasWork)
+        s_monitorState = 2;
+    else if (hasGame)
+        s_monitorState = 1;
+    else
+        s_monitorState = 0;
+}
+
+static bool IsSleepHour(int hour)
+{
+    return hour >= 0 && hour < 6;
+}
+
+static bool KillProcessesByKeywords(const std::map<std::wstring, std::wstring>& map)
+{
+    if (map.empty())
+        return false;
+
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snap == INVALID_HANDLE_VALUE)
+        return false;
+
+    bool killedAny = false;
+    PROCESSENTRY32W pe = {};
+    pe.dwSize = sizeof(pe);
+    if (Process32FirstW(snap, &pe))
+    {
+        do
+        {
+            if (pe.th32ProcessID == GetCurrentProcessId())
+                continue;
+            std::wstring exe = ToLowerCopy(pe.szExeFile);
+            for (const auto& kv : map)
+            {
+                const std::wstring keyLower = ToLowerCopy(kv.first);
+                if (exe.find(keyLower) == std::wstring::npos)
+                    continue;
+                HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                if (h)
+                {
+                    if (TerminateProcess(h, 0))
+                        killedAny = true;
+                    CloseHandle(h);
+                }
+                break;
+            }
+        } while (Process32NextW(snap, &pe));
+    }
+    CloseHandle(snap);
+    return killedAny;
+}
+
+// 检测运行中的应用进程名/窗口标题是否包含关键词，命中时说出对应的话
+static bool CheckGameKeywords(HWND hwnd)
+{
+    std::map<std::wstring, std::wstring> lifeMap;
+    LoadKeywordMap(L"monitor_life.txt", lifeMap);
+
+    UpdateMonitorState();
+
+    if (s_taskEntries.empty())
+    {
+        s_gameActiveKeys.clear();
+        return false;
+    }
+
+    if (lifeMap.empty())
+        return false;
+
+    std::set<std::wstring> current;
+    const std::wstring* reply = nullptr;
+    for (const auto& kv : lifeMap)
+    {
+        const std::wstring keyLower = ToLowerCopy(kv.first);
+        bool found = false;
+        for (const auto& entry : s_taskEntries)
+        {
+            const std::wstring nameLower = ToLowerCopy(entry.processName);
+            const std::wstring titleLower = ToLowerCopy(entry.title);
+            if ((!nameLower.empty() && nameLower.find(keyLower) != std::wstring::npos) ||
+                (!titleLower.empty() && titleLower.find(keyLower) != std::wstring::npos))
+            {
+                found = true;
+                break;
+            }
+        }
+        if (found)
+        {
+            current.insert(kv.first);
+            if (!reply && s_gameActiveKeys.find(kv.first) == s_gameActiveKeys.end())
+                reply = &kv.second;
+        }
+    }
+
+    s_gameActiveKeys = std::move(current);
+
+    if (reply)
+    {
+        ChatTalk(hwnd, reply->c_str());
+        return true;
+    }
+    return false;
 }
 
 static int GetLocalHour()
@@ -744,6 +984,7 @@ static void BuildTaskListEntries()
             entry.title = t;
             entry.icon = GetWindowIconByPath(hwnd);
             entry.pid = pid;
+            entry.processName = GetProcessNameByPid(pid);
             s_taskEntries.push_back(entry);
         }
     }
@@ -1826,6 +2067,14 @@ void ChatTickIdleCheck(HWND hwnd)
         s_state.lastInteraction = fileState.lastInteraction;
     }
 
+    const long long now = GetUnixTimeSeconds();
+    UpdateMonitorState();
+    if (CheckGameKeywords(hwnd))
+    {
+        s_state.lastInteraction = now;
+        return;
+    }
+
     const int valence = s_state.valence;
     const int arousal = s_state.arousal;
     int thresholdMinutes = (15 - arousal) * (15 - valence);
@@ -1833,7 +2082,6 @@ void ChatTickIdleCheck(HWND hwnd)
         thresholdMinutes = 0;
     const long long thresholdSeconds = static_cast<long long>(thresholdMinutes) * 60;
 
-    const long long now = GetUnixTimeSeconds();
     if (now - s_state.lastInteraction < thresholdSeconds)
         return;
 
@@ -1852,12 +2100,36 @@ void ChatTickIdleCheck(HWND hwnd)
         }
     }
 
+    const bool sleepMode = (s_monitorState == 1 && IsSleepHour(hour));
     IdleEntry idle;
-    if (!GetRandomIdleLine(idle))
-        return;
+    if (sleepMode)
+    {
+        if (!GetRandomVariantLine(L"sleep", 5, idle))
+            return;
+    }
+    else
+    {
+        if (!GetRandomVariantLine(L"idle", 5, idle))
+            return;
+    }
 
     ChatTalk(hwnd, idle.text.c_str());
     PlayIdleSound(idle.key);
+
+    if (sleepMode)
+    {
+        std::map<std::wstring, std::wstring> gameMap;
+        LoadKeywordMap(L"monitor_game.txt", gameMap);
+        if (!gameMap.empty())
+        {
+            int ret = MessageBoxW(hwnd,
+                L"现在已是凌晨，是否关闭游戏进程？",
+                L"提示",
+                MB_YESNO | MB_ICONQUESTION | MB_TOPMOST);
+            if (ret == IDYES)
+                KillProcessesByKeywords(gameMap);
+        }
+    }
 
     // 避免每分钟重复触发：触发后视作“被动互动”刷新时间戳
     s_state.lastInteraction = now;

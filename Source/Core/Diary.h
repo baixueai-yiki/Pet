@@ -7,3 +7,7 @@ void OnProgramStart();
 void OnProgramExit();
 // Append one line to diary_writing.txt
 void DiaryAppendWritingLine(const std::wstring& line);
+
+// Provide latest interaction/valence/arousal snapshot from Systems layer.
+using StateSnapshotProvider = void (*)(long long&, int&, int&);
+void DiarySetStateSnapshotProvider(StateSnapshotProvider provider);

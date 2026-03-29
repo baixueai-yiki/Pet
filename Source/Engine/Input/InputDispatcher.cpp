@@ -1,8 +1,8 @@
 ﻿#include "InputDispatcher.h"
-#include "../../Game/Chat/Chat.h"
-#include "../../Game/Pet/Pet.h"
+#include "../../Systems/Chat/Chat.h"
+#include "../../Systems/Pet/Pet.h"
 #include "../../Core/Path.h"
-#include "../../Game/Audio/Audio.h"
+#include "../../Systems/Audio/Audio.h"
 #include <cwctype>
 #include <fstream>
 #include <sstream>
@@ -40,8 +40,13 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
     if (utf8)
         data.erase(0, 3);
 
-    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    UINT codePage = CP_UTF8;
     int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0 && !utf8)
+    {
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    }
     if (wlen <= 0)
         return false;
 
@@ -62,6 +67,7 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
 
 // 记录最近六次右键点击时间，用于识别“慢三连+快三连”组合
 static DWORD s_rightClickTimes[6] = {};
+static int s_rightClickCount = 0;
 static bool s_audioSeeded = false;
 static bool s_leftDown = false;
 static bool s_dragMoved = false;
@@ -234,9 +240,14 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         for (int i = 0; i < 5; ++i)
             s_rightClickTimes[i] = s_rightClickTimes[i + 1];
         s_rightClickTimes[5] = GetTickCount();
+        if (s_rightClickCount < 6)
+            ++s_rightClickCount;
 
         const DWORD slowMax = 1000;
         const DWORD fastMax = 300;
+
+        if (s_rightClickCount < 6)
+            break;
 
         bool slowTriple = (s_rightClickTimes[3] - s_rightClickTimes[0] <= slowMax);
         bool fastTriple = (s_rightClickTimes[5] - s_rightClickTimes[3] <= fastMax);
@@ -245,6 +256,7 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         {
             for (int i = 0; i < 6; ++i)
                 s_rightClickTimes[i] = 0;
+            s_rightClickCount = 0;
             ChatShowInput(hwnd);
         }
         break;

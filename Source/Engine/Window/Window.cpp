@@ -10,8 +10,8 @@
 #include "Window.h"
 #include "../../Core/Path.h"
 #include "../../Core/Diary.h"
-#include "../../Game/Pet/Pet.h"
-#include "../../Game/Chat/Chat.h"
+#include "../../Systems/Pet/Pet.h"
+#include "../../Systems/Chat/Chat.h"
 
 static const UINT_PTR kIdleCheckTimer = 2;
 static const UINT kIdleCheckMs = 60000;
@@ -50,8 +50,13 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
     if (utf8)
         data.erase(0, 3);
 
-    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    UINT codePage = CP_UTF8;
     int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0 && !utf8)
+    {
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    }
     if (wlen <= 0)
         return false;
 
@@ -115,6 +120,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // Use a timer to keep drag redraw smooth
         SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
         SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
+        ChatInit();
         OnProgramStart();
         break;
 

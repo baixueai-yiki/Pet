@@ -4,7 +4,8 @@
 #include "Chat.h"
 #include "Core/Path.h"
 #include "Core/Diary.h"
-#include "../../Game/Pet/Pet.h"
+#include "Runtime/Scheduler.h"
+#include "../../Systems/Pet/Pet.h"
 #include "../../Engine/Input/InputDispatcher.h"
 #include <string>
 #include <fstream>
@@ -16,11 +17,9 @@
 #include <shellapi.h>
 #include <iomanip>
 #include <fstream>
-#include <chrono>
-#include <ctime>
 #include <cwctype>
 #include <tlhelp32.h>
-#include "Game/Audio/Audio.h"
+#include "Systems/Audio/Audio.h"
 
 // 全局静态状态（仅当前 cpp 使用）
 static HWND s_hInputWnd = nullptr;// 当前输入窗口句柄
@@ -97,6 +96,7 @@ static const UINT kTalkAutoHideMs = 3000;
 static HANDLE s_quitTimer = nullptr;
 static const DWORD kQuitDelayMs = 5000;
 static HWND s_mainHwnd = nullptr;
+static bool s_sleepPromptActive = false;
 static const int kTaskHeight = 200;
 static const UINT_PTR kTaskRefreshTimer = 2;
 static const UINT kTaskRefreshMs = 5000;
@@ -225,8 +225,13 @@ static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& l
     else if (IsLikelyUtf8(data))
         utf8 = true;
 
-    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    UINT codePage = CP_UTF8;
     int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0 && !utf8)
+    {
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    }
     if (wlen <= 0)
         return false;
 
@@ -264,19 +269,19 @@ static bool ReadFileText(const std::wstring& path, std::wstring& text)
     if (utf8)
         data.erase(0, 3);
 
-    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    UINT codePage = CP_UTF8;
     int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0 && !utf8)
+    {
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    }
     if (wlen <= 0)
         return false;
 
     text.assign(static_cast<size_t>(wlen), L'\0');
     MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &text[0], wlen);
     return true;
-}
-
-static long long GetUnixTimeSeconds()
-{
-    return static_cast<long long>(time(nullptr));
 }
 
 static bool ParseJsonInt64(const std::wstring& text, const std::wstring& key, long long& out)
@@ -708,11 +713,6 @@ static void UpdateMonitorState()
         s_monitorState = 0;
 }
 
-static bool IsSleepHour(int hour)
-{
-    return hour >= 0 && hour < 6;
-}
-
 static bool KillProcessesByKeywords(const std::map<std::wstring, std::wstring>& map)
 {
     if (map.empty())
@@ -750,6 +750,33 @@ static bool KillProcessesByKeywords(const std::map<std::wstring, std::wstring>& 
     }
     CloseHandle(snap);
     return killedAny;
+}
+
+struct SleepPromptContext
+{
+    HWND hwnd;
+    std::map<std::wstring, std::wstring> gameMap;
+};
+
+static DWORD WINAPI SleepPromptThread(LPVOID param)
+{
+    SleepPromptContext* ctx = static_cast<SleepPromptContext*>(param);
+    if (!ctx)
+    {
+        s_sleepPromptActive = false;
+        return 0;
+    }
+
+    int ret = MessageBoxW(ctx->hwnd,
+        L"现在已是凌晨，是否关闭游戏进程？",
+        L"提示",
+        MB_YESNO | MB_ICONQUESTION | MB_TOPMOST);
+    if (ret == IDYES)
+        KillProcessesByKeywords(ctx->gameMap);
+
+    s_sleepPromptActive = false;
+    delete ctx;
+    return 0;
 }
 
 // 检测运行中的应用进程名/窗口标题是否包含关键词，命中时说出对应的话
@@ -837,14 +864,6 @@ static bool CheckGameKeywords(HWND hwnd)
         return true;
     }
     return false;
-}
-
-static int GetLocalHour()
-{
-    time_t now = time(nullptr);
-    struct tm localTime = {};
-    localtime_s(&localTime, &now);
-    return localTime.tm_hour;
 }
 
 static std::wstring GetIdleOverrideKeyForHour(int hour)
@@ -2260,14 +2279,20 @@ void ChatTickIdleCheck(HWND hwnd)
     {
         std::map<std::wstring, std::wstring> gameMap;
         LoadKeywordMap(L"monitor_game.txt", gameMap);
-        if (!gameMap.empty())
+        if (!gameMap.empty() && !s_sleepPromptActive)
         {
-            int ret = MessageBoxW(hwnd,
-                L"现在已是凌晨，是否关闭游戏进程？",
-                L"提示",
-                MB_YESNO | MB_ICONQUESTION | MB_TOPMOST);
-            if (ret == IDYES)
-                KillProcessesByKeywords(gameMap);
+            s_sleepPromptActive = true;
+            SleepPromptContext* ctx = new SleepPromptContext();
+            ctx->hwnd = hwnd;
+            ctx->gameMap = gameMap;
+            HANDLE hThread = CreateThread(nullptr, 0, SleepPromptThread, ctx, 0, nullptr);
+            if (hThread)
+                CloseHandle(hThread);
+            else
+            {
+                s_sleepPromptActive = false;
+                delete ctx;
+            }
         }
     }
 
@@ -2281,6 +2306,11 @@ void ChatGetStateSnapshot(long long& lastInteraction, int& valence, int& arousal
     lastInteraction = s_state.lastInteraction;
     valence = s_state.valence;
     arousal = s_state.arousal;
+}
+
+void ChatInit()
+{
+    DiarySetStateSnapshotProvider(ChatGetStateSnapshot);
 }
 
 // 显示按钮输入窗口

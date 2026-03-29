@@ -19,5 +19,7 @@ void ChatRecordInteraction();
 void ChatTickIdleCheck(HWND hwnd);
 // 获取当前聊天状态快照（用于程序退出写入）
 void ChatGetStateSnapshot(long long& lastInteraction, int& valence, int& arousal);
+// 启动时注册聊天状态提供者
+void ChatInit();
 // 根据输入内容执行相应的对话逻辑
 void ChatHandleInput(HWND hwnd, const std::wstring& input);

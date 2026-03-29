@@ -1,10 +1,9 @@
 #include "Diary.h"
 #include "Path.h"
-#include "../Game/Chat/Chat.h"
+#include "../Runtime/Scheduler.h"
 #include <windows.h>
 #include <fstream>
 #include <string>
-#include <ctime>
 
 static std::string WideToUtf8(const std::wstring& text)
 {
@@ -18,6 +17,13 @@ static std::string WideToUtf8(const std::wstring& text)
     WideCharToMultiByte(CP_UTF8, 0, text.c_str(),
         static_cast<int>(text.size()), &out[0], len, nullptr, nullptr);
     return out;
+}
+
+static StateSnapshotProvider s_stateProvider = nullptr;
+
+void DiarySetStateSnapshotProvider(StateSnapshotProvider provider)
+{
+    s_stateProvider = provider;
 }
 
 static bool FileIsEmpty(const std::wstring& path)
@@ -102,19 +108,17 @@ static void AppendDiaryEntry()
         out.write(reinterpret_cast<const char*>(bom), sizeof(bom));
     }
 
-    time_t now = time(nullptr);
-    struct tm localTime = {};
-    localtime_s(&localTime, &now);
+    const DateTime localTime = GetLocalDateTime();
 
     std::wstring entry;
     entry.reserve(256);
     entry += L"==========\n";
-    entry += std::to_wstring(localTime.tm_year + 1900) + L"\u5e74" +
-             std::to_wstring(localTime.tm_mon + 1) + L"\u6708" +
-             std::to_wstring(localTime.tm_mday) + L"\u65e5\n";
-    entry += std::to_wstring(localTime.tm_hour) + L"\u65f6" +
-             std::to_wstring(localTime.tm_min) + L"\u5206" +
-             std::to_wstring(localTime.tm_sec) + L"\u79d2\n";
+    entry += std::to_wstring(localTime.year) + L"\u5e74" +
+             std::to_wstring(localTime.month) + L"\u6708" +
+             std::to_wstring(localTime.day) + L"\u65e5\n";
+    entry += std::to_wstring(localTime.hour) + L"\u65f6" +
+             std::to_wstring(localTime.minute) + L"\u5206" +
+             std::to_wstring(localTime.second) + L"\u79d2\n";
 
     std::wstring writing;
     if (ReadFileText(GetConfigPath(L"diary_writing.txt"), writing) && !writing.empty())
@@ -129,7 +133,8 @@ static void WriteStateJson()
     long long lastInteraction = 0;
     int valence = 8;
     int arousal = 8;
-    ChatGetStateSnapshot(lastInteraction, valence, arousal);
+    if (s_stateProvider)
+        s_stateProvider(lastInteraction, valence, arousal);
 
     const std::wstring configDir = GetExeDir() + L"\\config";
     CreateDirectoryW(configDir.c_str(), nullptr);

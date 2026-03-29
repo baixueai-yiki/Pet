@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 #include <windows.h>
-#include <windowsx.h>  // contains GET_X_LPARAM, etc.
+#include <windowsx.h>  // 包含坐标解析等宏
 
 extern PetState g_pet;
 

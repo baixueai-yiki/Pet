@@ -147,7 +147,7 @@ ChatInputAction ProcessChatInputChar(std::wstring& text, WPARAM key)
     return ChatInputAction::TextChanged;
 }
 
-// 从指定配置路径加载对话/按钮映射，支持 text/button/default
+// 从指定配置路径加载对话/按钮映射，支持文本/按钮/默认三种类型
 bool LoadChatConfig(const std::wstring& configPath)
 {
     s_textResponses.clear();
@@ -218,7 +218,7 @@ const std::wstring* GetDefaultChatResponse()
     return s_defaultResponse.empty() ? nullptr : &s_defaultResponse;
 }
 
-// 更新按钮状态，返回按下/释放事件供 UI 处理
+// 更新按钮状态，返回按下/释放事件供界面处理
 ButtonInputEvent ProcessButtonInput(ButtonInputState& state, WPARAM key, bool isDown)
 {
     (void)key;

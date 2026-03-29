@@ -1,42 +1,19 @@
-{
+﻿{
     "version": "2.0.0",
     "tasks": [
         {
             "label": "Build Pet",
             "type": "shell",
-            "command": "\"D:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl /EHsc main.cpp user32.lib gdi32.lib gdiplus.lib /Fe:Character.exe",
+            "command": "\"D:\\Program Files (x86)\\Microsoft Visual Studio\\18\\BuildTools\\VC\\Auxiliary\\Build\\vcvarsall.bat\" x64 && cl /std:c++17 /EHsc /I Source Source\\Main\\main.cpp Source\\Core\\Path.cpp Source\\Core\\Diary.cpp Source\\Engine\\Window\\Window.cpp Source\\Engine\\Render\\Render.cpp Source\\Engine\\Input\\InputDispatcher.cpp Source\\Engine\\Input\\InputChat.cpp Source\\Runtime\\Scheduler.cpp Source\\Runtime\\EventBus.cpp Source\\Runtime\\StateManager.cpp Source\\Systems\\Audio\\Audio.cpp Source\\Systems\\Pet\\Pet.cpp Source\\Systems\\Chat\\Chat.cpp /Fe:\"Distribution\\Miss qing\\Pet.exe\" /link user32.lib gdi32.lib gdiplus.lib winmm.lib",
             "group": {
                 "kind": "build",
-                "isDefault": false
+                "isDefault": true
             },
             "problemMatcher": "$msCompile",
             "presentation": {
                 "reveal": "always",
                 "panel": "shared"
             }
-        },
-        {
-            "type": "cppbuild",
-            "label": "C/C++: cl.exe 生成活动文件",
-            "command": "cl.exe",
-            "args": [
-                "/Zi",
-                "/EHsc",
-                "/nologo",
-                "/Fe${fileDirname}\\${fileBasenameNoExtension}.exe",
-                "${file}"
-            ],
-            "options": {
-                "cwd": "${fileDirname}"
-            },
-            "problemMatcher": [
-                "$msCompile"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": true
-            },
-            "detail": "调试器生成的任务。"
         }
     ]
 }

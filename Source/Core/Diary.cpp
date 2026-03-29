@@ -1,9 +1,11 @@
-#include "Diary.h"
+﻿#include "Diary.h"
 #include "Path.h"
 #include "../Runtime/Scheduler.h"
 #include <windows.h>
 #include <fstream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 static std::string WideToUtf8(const std::wstring& text)
 {
@@ -54,14 +56,108 @@ static bool ReadFileText(const std::wstring& path, std::wstring& out)
     if (utf8)
         data.erase(0, 3);
 
-    UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
+    UINT codePage = CP_UTF8;
     int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0 && !utf8)
+    {
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    }
     if (wlen <= 0)
         return false;
 
     out.assign(static_cast<size_t>(wlen), L'\0');
     MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &out[0], wlen);
     return true;
+}
+
+static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file.is_open())
+        return false;
+
+    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (data.empty())
+        return true;
+
+    bool utf8 = (data.size() >= 3 &&
+                 static_cast<unsigned char>(data[0]) == 0xEF &&
+                 static_cast<unsigned char>(data[1]) == 0xBB &&
+                 static_cast<unsigned char>(data[2]) == 0xBF);
+    if (utf8)
+        data.erase(0, 3);
+
+    UINT codePage = CP_UTF8;
+    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    if (wlen <= 0 && !utf8)
+    {
+        codePage = CP_ACP;
+        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
+    }
+    if (wlen <= 0)
+        return false;
+
+    std::wstring wdata(static_cast<size_t>(wlen), L'\0');
+    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
+
+    std::wistringstream iss(wdata);
+    std::wstring line;
+    while (std::getline(iss, line))
+    {
+        if (!line.empty() && line.back() == L'\r')
+            line.pop_back();
+        lines.push_back(line);
+    }
+    return true;
+}
+
+static std::wstring Trim(const std::wstring& s)
+{
+    const wchar_t* ws = L" \t\r\n";
+    size_t b = s.find_first_not_of(ws);
+    size_t e = s.find_last_not_of(ws);
+    if (b == std::wstring::npos)
+        return L"";
+    return s.substr(b, e - b + 1);
+}
+
+static bool GetDiaryScriptLineForDate(const DateTime& dt, std::wstring& out)
+{
+    out.clear();
+    std::vector<std::wstring> lines;
+    if (!ReadFileLines(GetConfigPath(L"diary_script.txt"), lines))
+        return false;
+
+    const std::wstring keyA = std::to_wstring(dt.month) + L"月" + std::to_wstring(dt.day) + L"日";
+    const std::wstring keyB = (dt.month < 10 ? L"0" : L"") + std::to_wstring(dt.month) +
+                              L"月" + (dt.day < 10 ? L"0" : L"") + std::to_wstring(dt.day) + L"日";
+
+    for (const auto& raw : lines)
+    {
+        std::wstring line = Trim(raw);
+        if (line.empty() || line[0] == L'#')
+            continue;
+        size_t sep = line.find(L':');
+        if (sep == std::wstring::npos)
+            sep = line.find(L'：');
+        if (sep == std::wstring::npos)
+            sep = line.find(L'=');
+        if (sep == std::wstring::npos)
+            continue;
+        std::wstring key = Trim(line.substr(0, sep));
+        if (!key.empty() && key.front() == L'\ufeff')
+            key.erase(0, 1);
+        std::wstring value = Trim(line.substr(sep + 1));
+        if (value.empty())
+            continue;
+        if (key == keyA || key == keyB)
+        {
+            out = value;
+            return true;
+        }
+    }
+    return false;
 }
 
 void OnProgramStart()
@@ -113,12 +209,16 @@ static void AppendDiaryEntry()
     std::wstring entry;
     entry.reserve(256);
     entry += L"==========\n";
-    entry += std::to_wstring(localTime.year) + L"\u5e74" +
-             std::to_wstring(localTime.month) + L"\u6708" +
-             std::to_wstring(localTime.day) + L"\u65e5\n";
-    entry += std::to_wstring(localTime.hour) + L"\u65f6" +
-             std::to_wstring(localTime.minute) + L"\u5206" +
-             std::to_wstring(localTime.second) + L"\u79d2\n";
+    entry += std::to_wstring(localTime.year) + L"年" +
+             std::to_wstring(localTime.month) + L"月" +
+             std::to_wstring(localTime.day) + L"日\n";
+    entry += std::to_wstring(localTime.hour) + L"时" +
+             std::to_wstring(localTime.minute) + L"分" +
+             std::to_wstring(localTime.second) + L"秒\n";
+
+    std::wstring festivalLine;
+    if (GetDiaryScriptLineForDate(localTime, festivalLine))
+        entry += festivalLine + L"\n";
 
     std::wstring writing;
     if (ReadFileText(GetConfigPath(L"diary_writing.txt"), writing) && !writing.empty())

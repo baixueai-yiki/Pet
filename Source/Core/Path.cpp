@@ -1,7 +1,7 @@
 ﻿#include "Path.h"
 #include <windows.h>
 
-// 返回当前 exe 所在目录，其他路径以此作为根
+// 返回当前程序所在目录，其他路径以此作为根
 std::wstring GetExeDir()
 {
     wchar_t path[MAX_PATH];

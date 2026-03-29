@@ -1,7 +1,8 @@
-#include "EventBus.h"
+﻿#include "EventBus.h"
 #include <unordered_map>
 #include <vector>
 
+// 订阅记录：保存回调和编号
 struct HandlerEntry
 {
     int id;
@@ -11,6 +12,7 @@ struct HandlerEntry
 static std::unordered_map<std::wstring, std::vector<HandlerEntry>> s_handlers;
 static int s_nextId = 1;
 
+// 注册订阅，返回订阅编号
 int EventSubscribe(const std::wstring& eventName, EventHandler handler)
 {
     if (!handler)
@@ -21,6 +23,7 @@ int EventSubscribe(const std::wstring& eventName, EventHandler handler)
     return id;
 }
 
+// 取消订阅（按事件名 + 编号）
 void EventUnsubscribe(const std::wstring& eventName, int id)
 {
     auto it = s_handlers.find(eventName);
@@ -41,6 +44,7 @@ void EventUnsubscribe(const std::wstring& eventName, int id)
         s_handlers.erase(it);
 }
 
+// 触发事件，按事件名分发给订阅者
 void EventEmit(const std::wstring& eventName, const std::wstring& payload)
 {
     auto it = s_handlers.find(eventName);
@@ -48,7 +52,7 @@ void EventEmit(const std::wstring& eventName, const std::wstring& payload)
         return;
 
     const Event evt{ eventName, payload };
-    // Copy list to allow safe unsubscribe during callbacks.
+    // 复制订阅列表，避免回调中取消订阅造成迭代失效。
     const auto list = it->second;
     for (const auto& entry : list)
     {
@@ -57,6 +61,7 @@ void EventEmit(const std::wstring& eventName, const std::wstring& payload)
     }
 }
 
+// 清空所有订阅
 void EventClear()
 {
     s_handlers.clear();

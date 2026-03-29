@@ -3,8 +3,8 @@
 #include <windows.h>
 
 ///////////////////////////////////////////////////////////////////////////////
-// 聊天输入模块（文本 + UI 按钮共同使用的辅助库）
-// 该模块可以处理 `WM_CHAR` 里的回车/退格/普通字符，并支持按键与按钮共用的配置映射。
+// 聊天输入模块（文本 + 界面按钮共同使用的辅助库）
+// 该模块可处理字符消息中的回车/退格/普通字符，并支持按键与按钮共用的配置映射。
 ///////////////////////////////////////////////////////////////////////////////
 
 // 文本输入具体结果，用来指导输入框是否重绘或提交
@@ -18,7 +18,7 @@ enum class ChatInputAction
 // 处理聊天输入框中的字符事件（回车/退格/文字）
 ChatInputAction ProcessChatInputChar(std::wstring& text, WPARAM key);
 
-// 按钮输入事件，适合那些 UI 上的点击交互
+// 按钮输入事件，适合界面上的点击交互
 enum class ButtonInputEvent
 {
     None,
@@ -33,10 +33,10 @@ struct ButtonInputState
     bool wasDown = false;
 };
 
-// 更新一个按钮的状态并返回事件，`key` 参数当前未使用，仅为未来扩展准备
+// 更新一个按钮的状态并返回事件，参数键名当前未使用，仅为未来扩展准备
 ButtonInputEvent ProcessButtonInput(ButtonInputState& state, WPARAM key, bool isDown);
 
-// chat 配置文件解析（类型为 text/button/default）
+// 聊天配置文件解析（类型为 文本/按钮/默认）
 bool LoadChatConfig(const std::wstring& configPath);
 const std::wstring* GetChatTextResponse(const std::wstring& key);
 const std::wstring* GetChatButtonResponse(const std::wstring& buttonId);

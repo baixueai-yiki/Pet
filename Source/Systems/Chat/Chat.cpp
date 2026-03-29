@@ -5,6 +5,7 @@
 #include "Core/Path.h"
 #include "Core/Diary.h"
 #include "Runtime/Scheduler.h"
+#include "Runtime/StateManager.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Engine/Input/InputDispatcher.h"
 #include <string>
@@ -21,7 +22,7 @@
 #include <tlhelp32.h>
 #include "Systems/Audio/Audio.h"
 
-// 全局静态状态（仅当前 cpp 使用）
+// 全局静态状态（仅当前cpp使用）
 static HWND s_hInputWnd = nullptr;// 当前输入窗口句柄
 static HWND s_hButtonWnd = nullptr;// 当前按钮窗口句柄
 static std::wstring s_inputText;// 当前输入框中的文本内容
@@ -121,7 +122,7 @@ static bool IsTaskListTrigger(const std::wstring& text)
     return text == L"任务管理器";
 }
 
-// forward decls
+// 前置声明
 static void HideKillButton();
 static bool IsAppWindow(HWND hwnd);
 void ChatTalk(HWND hwnd, const wchar_t* text);
@@ -1500,378 +1501,8 @@ static void ChatShowTaskList(HWND hwndParent)
     if (refreshSec < 1) refreshSec = 1;
     if (refreshSec > 60) refreshSec = 60;
     SetTimer(s_hTaskWnd, kTaskRefreshTimer, refreshSec * 1000, nullptr);
+
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 // 文字输入处理逻辑
 void ChatHandleInput(HWND hwnd, const std::wstring& input)
@@ -2215,7 +1846,7 @@ void ChatTickIdleCheck(HWND hwnd)
 {
     EnsureStateLoaded();
 
-    // 允许外部手动修改 valence / arousal
+    // 允许外部手动修改 valence / arousal 愉悦度/兴奋度
     ChatState fileState = s_state;
     if (TryLoadState(fileState))
     {
@@ -2226,6 +1857,13 @@ void ChatTickIdleCheck(HWND hwnd)
 
     const long long now = GetUnixTimeSeconds();
     UpdateMonitorState();
+    StateBeginUpdate();
+    switch (s_monitorState)
+    {
+    case 2: StateSet(L"activity", L"work"); break;
+    case 1: StateSet(L"activity", L"game"); break;
+    default: StateSet(L"activity", L"life"); break;
+    }
     if (CheckGameKeywords(hwnd))
     {
         s_state.lastInteraction = now;
@@ -2243,6 +1881,8 @@ void ChatTickIdleCheck(HWND hwnd)
         return;
 
     const int hour = GetLocalHour();
+    StateSet(L"time", IsSleepHour(hour) ? L"night" : L"day");
+    StateEndUpdate();
     const std::wstring overrideKey = GetIdleOverrideKeyForHour(hour);
     if (!overrideKey.empty())
     {
@@ -2308,9 +1948,22 @@ void ChatGetStateSnapshot(long long& lastInteraction, int& valence, int& arousal
     arousal = s_state.arousal;
 }
 
-void ChatInit()
+void ChatInit(HWND hwnd)
 {
+    s_mainHwnd = hwnd;
     DiarySetStateSnapshotProvider(ChatGetStateSnapshot);
+
+    StateBeginUpdate();
+    // 初始化维度，确保至少有一个条件订阅能立即生效。
+    StateSet(L"activity", L"life");
+    StateSet(L"time", L"day");
+    // 基础 Tick，确保在条件订阅未生效时也能更新状态。
+    StateRegisterProfile(
+        L"tick.base",
+        {},
+        { { L"tick.minute", [](const Event&) { if (s_mainHwnd) ChatTickIdleCheck(s_mainHwnd); } } }
+    );
+    StateEndUpdate();
 }
 
 // 显示按钮输入窗口

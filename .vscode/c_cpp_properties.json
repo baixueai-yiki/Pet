@@ -6,9 +6,10 @@
             "intelliSenseMode": "windows-msvc-x64",
             "includePath": [
                 "${workspaceFolder}/Source",
-                "${workspaceFolder}/Source/Game",
+                "${workspaceFolder}/Source/Systems",
                 "${workspaceFolder}/Source/Engine",
                 "${workspaceFolder}/Source/Core",
+                "${workspaceFolder}/Source/Runtime",
                 "${workspaceFolder}/Distribution/**",
                 "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/ucrt",
                 "C:/Program Files (x86)/Windows Kits/10/Include/10.0.26100.0/shared",

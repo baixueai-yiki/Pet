@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <string>
 
 // 播放 assets 目录下的音频文件（不存在时静默忽略）

@@ -10,6 +10,7 @@
 #include "Window.h"
 #include "../../Core/Path.h"
 #include "../../Core/Diary.h"
+#include "../../Runtime/Scheduler.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Systems/Chat/Chat.h"
 
@@ -117,10 +118,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch (msg)
     {
     case WM_CREATE:
-        // Use a timer to keep drag redraw smooth
+        // 使用定时器让拖动时的重绘更顺滑
         SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
         SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
-        ChatInit();
+        ChatInit(hwnd);
+        SchedulerClear();
+        ScheduleEveryMs(L"tick.minute", kIdleCheckMs);
         OnProgramStart();
         break;
 
@@ -146,10 +149,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         HandleInput(hwnd, msg, wParam, lParam);
         break;
     case WM_TIMER:
-        // Redraw at a steady rate while dragging
+        // 拖动时按稳定频率重绘
         if (wParam == kIdleCheckTimer)
         {
-            ChatTickIdleCheck(hwnd);
+            SchedulerTick();
         }
         else
         {
@@ -161,7 +164,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_PAINT:
     {
-        // 进入/退出绘制流程，确保 WM_PAINT 被正确消费
+        // 进入/退出绘制流程，确保绘制消息被正确消费
         PAINTSTRUCT ps;
         BeginPaint(hwnd, &ps);
 

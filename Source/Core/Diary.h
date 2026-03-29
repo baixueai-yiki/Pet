@@ -1,13 +1,13 @@
-#pragma once
+﻿#pragma once
 #include <string>
 
-// Program start: clear diary_writing.txt
+// 程序启动时：清空 diary_writing.txt
 void OnProgramStart();
-// Program exit: write state.json and append to diary.txt
+// 程序退出时：写入 state.json 并追加到 diary.txt
 void OnProgramExit();
-// Append one line to diary_writing.txt
+// 向 diary_writing.txt 追加一行
 void DiaryAppendWritingLine(const std::wstring& line);
 
-// Provide latest interaction/valence/arousal snapshot from Systems layer.
+// 由系统层提供最新互动/愉悦度/兴奋度的快照。
 using StateSnapshotProvider = void (*)(long long&, int&, int&);
 void DiarySetStateSnapshotProvider(StateSnapshotProvider provider);

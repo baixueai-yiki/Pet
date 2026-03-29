@@ -11,3 +11,6 @@ void DiaryAppendWritingLine(const std::wstring& line);
 // 由系统层提供最新互动/愉悦度/兴奋度的快照。
 using StateSnapshotProvider = void (*)(long long&, int&, int&);
 void DiarySetStateSnapshotProvider(StateSnapshotProvider provider);
+
+// 注册日记相关事件订阅
+void DiaryInit();

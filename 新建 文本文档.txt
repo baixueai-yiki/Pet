@@ -1,77 +1,148 @@
-Source/
-│
-├── Core 工具层
-│    └── Path
-│
-├── Engine 引擎层
-│   ├── Window
-│   │     └── Window
-│   ├── Render
-│   │     └── Renderer
-│   └── Input
-│           └── InputDispatcher
-│
-├── Game 游戏逻辑层
-│   ├── Pet
-│   │     ├── Pet
-│   │     ├── 
-│   │     └── 
-│   └── Chat
-│          └── Chat
-│
-└── Main
-      └── Main.cpp
+﻿【文件结构（当前工作区）】
 
-/Distribution
-│
-└── Miss qing 
-       ├── assets
-       │    ├── images
-       │    └── audio
-       └── config
-/Bin
+.\
+├─ .vscode\
+│  ├─ c_cpp_properties.json
+│  └─ tasks.json
+├─ Content\
+│  └─ Images\
+│     └─ character.png
+├─ Distribution\
+│  └─ Miss qing\
+│     ├─ Pet.exe
+│     ├─ diary.txt
+│     ├─ config\
+│     │  ├─ diary_script.txt
+│     │  ├─ diary_writing.txt
+│     │  ├─ settings.txt
+│     │  └─ state.json
+│     └─ assets\
+│        ├─ images\
+│        │  └─ character.png
+│        ├─ audio\
+│        │  ├─ poke_nya.wav
+│        │  ├─ poke_find.wav
+│        │  ├─ poke_ah.wav
+│        │  ├─ poke_poke.wav
+│        │  ├─ morning_1.wav
+│        │  ├─ lunch_1.wav
+│        │  ├─ dinner_1.wav
+│        │  ├─ night_1.wav
+│        │  └─ sleep_1.wav
+│        └─ chat\
+│           ├─ chat_idle.txt
+│           ├─ chat_safeword.txt
+│           ├─ monitor_game.txt
+│           ├─ monitor_life.txt
+│           └─ monitor_work.txt
+└─ Source\
+   ├─ Main\
+   │  └─ main.cpp
+   ├─ Core\
+   │  ├─ Path.h / Path.cpp
+   │  └─ Diary.h / Diary.cpp
+   ├─ Runtime\
+   │  ├─ EventBus.h / EventBus.cpp
+   │  ├─ Scheduler.h / Scheduler.cpp
+   │  └─ StateManager.h / StateManager.cpp
+   ├─ Engine\
+   │  ├─ Window\
+   │  │  └─ Window.h / Window.cpp
+   │  ├─ Render\
+   │  │  └─ Render.h / Render.cpp
+   │  └─ Input\
+   │     ├─ InputDispatcher.h / InputDispatcher.cpp
+   │     └─ InputChat.h / InputChat.cpp
+   └─ Systems\
+      ├─ Pet\
+      │  └─ Pet.h / Pet.cpp
+      ├─ Chat\
+      │  └─ Chat.h / Chat.cpp
+      └─ Audio\
+         └─ Audio.h / Audio.cpp
 
-/Build
+
+【程序运作过程（线连接版）】
+
+启动入口
+main.cpp (wWinMain)
+  │
+  ├─> PetInit() 初始化宠物状态
+  │
+  ├─> RendererInit() 载入图片并缩放到宽 200
+  │
+  ├─> CreateMainWindow() 创建透明顶层窗口
+  │
+  └─> 消息循环 GetMessage/DispatchMessage
+           │
+           ▼
+        WindowProc
+           │
+           ├─ WM_CREATE
+           │    ├─ SetTimer(刷新)
+           │    ├─ SetTimer(每分钟)
+           │    ├─ ChatInit(hwnd)
+           │    └─ OnProgramStart() 清空 diary_writing.txt
+           │
+           ├─ WM_TIMER
+           │    ├─ kIdleCheckTimer → SchedulerTick()
+           │    │                     │
+           │    │                     └─ Scheduler 只负责 Emit("tick.minute")
+           │    │                           （EventBus 自动分发）
+           │    │                                 ├─ ChatSystem 收到 → ChatTickIdleCheck()
+           │    │                                 ├─ AudioSystem 收到 → 自己处理
+           │    │                                 └─ DiarySystem 收到 → 自己处理
+           │    │
+           │    └─ 拖动刷新 → InvalidateRect
+           │
+           ├─ WM_PAINT
+           │    └─ RendererRender() 绘制角色
+           │
+           ├─ WM_MOUSE / WM_RBUTTON
+           │    └─ HandleInput() 处理拖动/点击/弹输入框
+           │
+           └─ WM_DESTROY / WM_ENDSESSION
+                └─ OnProgramExit()
+                     ├─ 写入 state.json
+                     └─ 追加 diary.txt
 
 
+输入与聊天
+HandleInput
+  │
+  ├─ 左键拖动 → 更新 g_pet 坐标
+  │
+  ├─ 左键单击 → 戳戳计数 + 播放音频
+  │
+  └─ 右键触发 → ChatShowInput()
+                  │
+                  └─ TextInputProc
+                        ├─ 输入/回车/退格
+                        └─ 提交 → ChatHandleInput()
+                               │
+                               ├─ 关键词匹配 chat_safeword.txt
+                               ├─ 我爱你 → 弹按钮
+                               └─ 普通回复 → ChatTalk()
 
 
+任务管理器
+输入“任务管理器”
+  └─ ChatShowTaskList()
+        ├─ 构建可见窗口列表 + 图标
+        ├─ 右键选中 → 显示“清理”按钮
+        └─ 左键任意处 → 关闭任务管理器
 
 
+日记系统
+OnProgramStart()
+  └─ 清空 diary_writing.txt
 
-Source/
-│
-├── Core（纯工具，不参与逻辑）
-│   ├── Path
-│   ├── File
-│   ├── Time
-│   └── Random
-│
-├── Engine（底层能力）
-│   ├── Window
-│   ├── Renderer
-│   ├── Input
-│   └── Audio   ←（现在其实缺这个独立层）
-│
-├── Runtime（新增，核心调度层）
-│   ├── EventBus        ←（核心！解耦）
-│   ├── StateManager    ←（state.json）
-│   └── Scheduler       ←（idle / 时间驱动）
-│
-├── Systems（新增，系统层）
-│   ├── ChatSystem      ←（纯逻辑，不管UI）
-│   ├── MonitorSystem   ←（进程检测）
-│   ├── DiarySystem
-│   └── InteractionSystem（点击/拖拽/输入行为）
-│
-├── UI（把界面从逻辑剥离）
-│   ├── PetView         ← 桌宠显示
-│   ├── ChatBubble
-│   ├── InputBox
-│   └── TaskManagerView
-│
-├── Game（只放“角色”）
-│   └── Pet
-│        └── PetState（valence / arousal / flags）
-│
-└── Main
+运行期间（随机对话/进程触发）
+  └─ 写入 diary_writing.txt
+
+OnProgramExit()
+  ├─ 写 state.json
+  └─ 追加 diary.txt
+      ├─ 分割线 + 日期时间
+      ├─ diary_script.txt 当日日期内容
+      └─ diary_writing.txt 全文

@@ -1,6 +1,7 @@
 ﻿#include "Diary.h"
 #include "Path.h"
 #include "../Runtime/Scheduler.h"
+#include "../Runtime/EventBus.h"
 #include <windows.h>
 #include <fstream>
 #include <sstream>
@@ -26,6 +27,14 @@ static StateSnapshotProvider s_stateProvider = nullptr;
 void DiarySetStateSnapshotProvider(StateSnapshotProvider provider)
 {
     s_stateProvider = provider;
+}
+
+void DiaryInit()
+{
+    EventSubscribe(L"diary.append", [](const Event& evt) {
+        if (!evt.payload.empty())
+            DiaryAppendWritingLine(evt.payload);
+    });
 }
 
 static bool FileIsEmpty(const std::wstring& path)

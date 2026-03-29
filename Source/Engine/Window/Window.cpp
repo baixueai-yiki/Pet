@@ -13,6 +13,7 @@
 #include "../../Runtime/Scheduler.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Systems/Chat/Chat.h"
+#include "../../Systems/Audio/Audio.h"
 
 static const UINT_PTR kIdleCheckTimer = 2;
 static const UINT kIdleCheckMs = 60000;
@@ -122,6 +123,8 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
         SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
         ChatInit(hwnd);
+        AudioInit();
+        DiaryInit();
         SchedulerClear();
         ScheduleEveryMs(L"tick.minute", kIdleCheckMs);
         OnProgramStart();

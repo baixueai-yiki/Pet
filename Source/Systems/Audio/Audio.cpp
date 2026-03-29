@@ -1,4 +1,5 @@
 #include "Audio.h"
+#include "Runtime/EventBus.h"
 #include "../../Core/Path.h"
 #include <windows.h>
 #include <mmsystem.h>
@@ -20,4 +21,16 @@ void PlayAudioAsset(const std::wstring& relative)
         return;
     const std::wstring path = GetAssetPath(relative);
     PlayAudioFile(path);
+}
+
+void AudioInit()
+{
+    EventSubscribe(L"audio.play", [](const Event& evt) {
+        if (!evt.payload.empty())
+            PlayAudioAsset(evt.payload);
+    });
+    EventSubscribe(L"audio.play_abs", [](const Event& evt) {
+        if (!evt.payload.empty())
+            PlayAudioFile(evt.payload);
+    });
 }

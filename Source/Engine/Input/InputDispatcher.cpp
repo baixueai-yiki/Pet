@@ -3,6 +3,7 @@
 #include "../../Systems/Pet/Pet.h"
 #include "../../Core/Path.h"
 #include "../../Systems/Audio/Audio.h"
+#include "../../Runtime/EventBus.h"
 #include <cwctype>
 #include <fstream>
 #include <sstream>
@@ -96,7 +97,7 @@ static void PlayRandomPokeSound()
         L"audio\\poke_poke.wav"
     };
     const int idx = rand() % (sizeof(kSounds) / sizeof(kSounds[0]));
-    PlayAudioAsset(kSounds[idx]);
+    EventEmit(L"audio.play", kSounds[idx]);
 }
 
 static std::wstring Trim(const std::wstring& s)

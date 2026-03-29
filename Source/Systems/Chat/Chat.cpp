@@ -521,7 +521,7 @@ static void TryAppendDiaryForKey(const std::wstring& key)
     if (it == map.end() || it->second.empty())
         return;
 
-    DiaryAppendWritingLine(it->second);
+    EventEmit(L"diary.append", it->second);
     s_diaryLoggedCategories.insert(category);
 }
 
@@ -544,7 +544,7 @@ static void TryAppendDiaryForKeyword(const std::wstring& key, const std::wstring
     if (it == map.end() || it->second.empty())
         return;
 
-    DiaryAppendWritingLine(it->second);
+    EventEmit(L"diary.append", it->second);
     ++count;
 }
 
@@ -615,7 +615,7 @@ static void PlayIdleSound(const std::wstring& key)
 {
     if (key.empty())
         return;
-    PlayAudioAsset(L"audio\\" + key + L".wav");
+    EventEmit(L"audio.play", L"audio\\" + key + L".wav");
 }
 
 static std::wstring ToLowerCopy(std::wstring s)

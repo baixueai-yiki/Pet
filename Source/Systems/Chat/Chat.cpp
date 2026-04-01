@@ -4,10 +4,12 @@
 #include "Chat.h"
 #include "Core/Path.h"
 #include "Core/Diary.h"
+#include "Core/TextFile.h"
 #include "Runtime/Scheduler.h"
 #include "Runtime/StateManager.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Engine/Input/InputDispatcher.h"
+#include "../Setting/Setting.h"
 #include <string>
 #include <fstream>
 #include <map>
@@ -128,38 +130,8 @@ static bool IsAppWindow(HWND hwnd);
 void ChatTalk(HWND hwnd, const wchar_t* text);
 static void BuildTaskListEntries();
 
-static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines);
 static std::wstring Trim(const std::wstring& text);
 
-static int ReadSettingsInt(const std::wstring& key, int defaultValue)
-{
-    std::vector<std::wstring> lines;
-    if (!ReadFileLines(GetConfigPath(L"settings.txt"), lines))
-        return defaultValue;
-
-    for (const auto& lineRaw : lines)
-    {
-        std::wstring line = Trim(lineRaw);
-        if (line.empty() || line[0] == L'#')
-            continue;
-        size_t eq = line.find(L'=');
-        if (eq == std::wstring::npos)
-            continue;
-        std::wstring k = Trim(line.substr(0, eq));
-        if (!k.empty() && k.front() == L'\ufeff')
-            k.erase(0, 1);
-        std::wstring v = Trim(line.substr(eq + 1));
-        if (k == key)
-        {
-            int val = defaultValue;
-            std::wistringstream iss(v);
-            iss >> val;
-            return val;
-        }
-    }
-
-    return defaultValue;
-}
 static VOID CALLBACK QuitTimerProc(PVOID, BOOLEAN)
 {
     if (s_mainHwnd)
@@ -179,111 +151,6 @@ static std::wstring Trim(const std::wstring& text)
 #pragma comment(lib, "imm32.lib")
 
 
-static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return false;
-
-    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.empty())
-        return true;
-
-    auto IsLikelyUtf8 = [](const std::string& s) -> bool
-    {
-        size_t i = 0;
-        const size_t n = s.size();
-        while (i < n)
-        {
-            unsigned char c = static_cast<unsigned char>(s[i]);
-            if (c <= 0x7F)
-            {
-                ++i;
-                continue;
-            }
-            size_t need = 0;
-            if ((c & 0xE0) == 0xC0) need = 1;
-            else if ((c & 0xF0) == 0xE0) need = 2;
-            else if ((c & 0xF8) == 0xF0) need = 3;
-            else return false;
-            if (i + need >= n) return false;
-            for (size_t j = 1; j <= need; ++j)
-            {
-                unsigned char cc = static_cast<unsigned char>(s[i + j]);
-                if ((cc & 0xC0) != 0x80) return false;
-            }
-            i += need + 1;
-        }
-        return true;
-    };
-
-    bool utf8 = (data.size() >= 3 &&
-                 static_cast<unsigned char>(data[0]) == 0xEF &&
-                 static_cast<unsigned char>(data[1]) == 0xBB &&
-                 static_cast<unsigned char>(data[2]) == 0xBF);
-    if (utf8)
-        data.erase(0, 3);
-    else if (IsLikelyUtf8(data))
-        utf8 = true;
-
-    UINT codePage = CP_UTF8;
-    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    if (wlen <= 0 && !utf8)
-    {
-        codePage = CP_ACP;
-        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    }
-    if (wlen <= 0)
-        return false;
-
-    std::wstring wdata(static_cast<size_t>(wlen), L'\0');
-    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
-
-    std::wistringstream iss(wdata);
-    std::wstring line;
-    while (std::getline(iss, line))
-    {
-        if (!line.empty() && line.back() == L'\r')
-            line.pop_back();
-        lines.push_back(line);
-    }
-    return true;
-}
-
-static bool ReadFileText(const std::wstring& path, std::wstring& text)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return false;
-
-    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.empty())
-    {
-        text.clear();
-        return true;
-    }
-
-    bool utf8 = (data.size() >= 3 &&
-                 static_cast<unsigned char>(data[0]) == 0xEF &&
-                 static_cast<unsigned char>(data[1]) == 0xBB &&
-                 static_cast<unsigned char>(data[2]) == 0xBF);
-    if (utf8)
-        data.erase(0, 3);
-
-    UINT codePage = CP_UTF8;
-    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    if (wlen <= 0 && !utf8)
-    {
-        codePage = CP_ACP;
-        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    }
-    if (wlen <= 0)
-        return false;
-
-    text.assign(static_cast<size_t>(wlen), L'\0');
-    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &text[0], wlen);
-    return true;
-}
 
 static bool ParseJsonInt64(const std::wstring& text, const std::wstring& key, long long& out)
 {
@@ -356,7 +223,7 @@ static void SaveState(const ChatState& state)
 static bool TryLoadState(ChatState& out)
 {
     std::wstring text;
-    if (!ReadFileText(GetStatePath(), text))
+    if (!TextFile::ReadText(GetStatePath(), text))
         return false;
 
     bool any = false;
@@ -412,7 +279,7 @@ struct IdleEntry
 static bool LoadIdleMap(std::map<std::wstring, std::wstring>& mapOut)
 {
     std::vector<std::wstring> lines;
-    if (!ReadFileLines(GetAssetPath(L"chat\\chat_idle.txt"), lines))
+    if (!TextFile::ReadLines(GetAssetPath(L"chat\\chat_idle.txt"), lines))
         return false;
 
     mapOut.clear();
@@ -456,7 +323,7 @@ static void LoadDiaryMapFromFile(const std::wstring& file, std::map<std::wstring
     const std::wstring path = (file == L"diary_script.txt")
         ? GetConfigPath(file)
         : GetAssetPath(L"chat\\" + file);
-    if (!ReadFileLines(path, lines))
+    if (!TextFile::ReadLines(path, lines))
         return;
 
     for (const auto& lineRaw : lines)
@@ -647,7 +514,7 @@ static std::wstring GetProcessNameByPid(DWORD pid)
 static bool LoadKeywordMap(const std::wstring& file, std::map<std::wstring, std::wstring>& out)
 {
     std::vector<std::wstring> lines;
-    if (!ReadFileLines(GetAssetPath(L"chat\\" + file), lines))
+    if (!TextFile::ReadLines(GetAssetPath(L"chat\\" + file), lines))
         return false;
 
     out.clear();
@@ -869,10 +736,10 @@ static bool CheckGameKeywords(HWND hwnd)
 
 static std::wstring GetIdleOverrideKeyForHour(int hour)
 {
-    const int morning = ReadSettingsInt(L"早安时间", 7);
-    const int lunch = ReadSettingsInt(L"午餐时间", 12);
-    const int dinner = ReadSettingsInt(L"晚餐时间", 18);
-    const int night = ReadSettingsInt(L"晚安时间", 22);
+    const int morning = Setting::GetInt(L"早安时间", 7);
+    const int lunch = Setting::GetInt(L"午餐时间", 12);
+    const int dinner = Setting::GetInt(L"晚餐时间", 18);
+    const int night = Setting::GetInt(L"晚安时间", 22);
 
     if (hour == morning)
         return L"morning";
@@ -918,7 +785,7 @@ static void LoadDialogConfig()
 
     std::vector<std::wstring> lines;
     const std::wstring path = GetAssetPath(L"chat\\chat_safeword.txt");
-    if (!ReadFileLines(path, lines))
+    if (!TextFile::ReadLines(path, lines))
         return;
 
     for (const auto& lineRaw : lines)
@@ -1497,7 +1364,7 @@ static void ChatShowTaskList(HWND hwndParent)
     ChatUpdateTaskListPosition();
     ShowWindow(s_hTaskWnd, SW_SHOW);
     InvalidateRect(s_hTaskWnd, nullptr, TRUE);
-    int refreshSec = ReadSettingsInt(L"任务刷新秒", 5);
+    int refreshSec = Setting::GetInt(L"任务刷新秒", 5);
     if (refreshSec < 1) refreshSec = 1;
     if (refreshSec > 60) refreshSec = 60;
     SetTimer(s_hTaskWnd, kTaskRefreshTimer, refreshSec * 1000, nullptr);
@@ -1513,11 +1380,23 @@ void ChatHandleInput(HWND hwnd, const std::wstring& input)
         LoadDialogConfig();
 
     const std::wstring normalized = Trim(input);
+    if (Setting::TryApplyInlineValue(normalized))
+    {
+        InvalidateRect(hwnd, nullptr, TRUE);
+        return;
+    }
     auto it = s_dialogMap.find(normalized);
 
     if (IsTaskListTrigger(normalized))
     {
         ChatShowTaskList(hwnd);
+        return;
+    }
+
+    if (normalized == L"设置")
+    {
+        Setting::ToggleOverlay();
+        InvalidateRect(hwnd, nullptr, TRUE);
         return;
     }
 
@@ -1840,6 +1719,67 @@ void ChatRecordInteraction()
 {
     EnsureStateLoaded();
     s_state.lastInteraction = GetUnixTimeSeconds();
+}
+
+ChatSystem& ChatSystem::Get()
+{
+    static ChatSystem instance;
+    return instance;
+}
+
+void ChatSystem::Init(HWND hwnd)
+{
+    ChatInit(hwnd);
+}
+
+void ChatSystem::ShowInput(HWND hwndParent)
+{
+    ChatShowInput(hwndParent);
+}
+
+void ChatSystem::ShowButtonInput(HWND hwndParent, const std::wstring& key1, const std::wstring& key2)
+{
+    ChatShowButtonInput(hwndParent, key1, key2);
+}
+
+void ChatSystem::UpdateInputPosition()
+{
+    ChatUpdateInputPosition();
+}
+
+void ChatSystem::UpdateTalkPosition()
+{
+    ChatUpdateTalkPosition();
+}
+
+void ChatSystem::UpdateButtonPosition()
+{
+    ChatUpdateButtonPosition();
+}
+
+void ChatSystem::UpdateTaskListPosition()
+{
+    ChatUpdateTaskListPosition();
+}
+
+void ChatSystem::RecordInteraction()
+{
+    ChatRecordInteraction();
+}
+
+void ChatSystem::TickIdleCheck(HWND hwnd)
+{
+    ChatTickIdleCheck(hwnd);
+}
+
+void ChatSystem::GetStateSnapshot(long long& lastInteraction, int& valence, int& arousal)
+{
+    ChatGetStateSnapshot(lastInteraction, valence, arousal);
+}
+
+void ChatSystem::HandleInput(HWND hwnd, const std::wstring& input)
+{
+    ChatHandleInput(hwnd, input);
 }
 
 void ChatTickIdleCheck(HWND hwnd)

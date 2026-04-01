@@ -10,6 +10,8 @@
 #include <windows.h>
 #endif
 
+#include "../../Core/TextFile.h"
+
 namespace
 {
     std::wstring Trim(const std::wstring& text)
@@ -22,59 +24,6 @@ namespace
         return text.substr(start, end - start + 1);
     }
 
-#ifdef _WIN32
-    bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
-    {
-        std::ifstream file(path, std::ios::binary);
-        if (!file.is_open())
-            return false;
-
-        std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        if (data.empty())
-            return true;
-
-        bool utf8 = (data.size() >= 3 &&
-                     static_cast<unsigned char>(data[0]) == 0xEF &&
-                     static_cast<unsigned char>(data[1]) == 0xBB &&
-                     static_cast<unsigned char>(data[2]) == 0xBF);
-        if (utf8)
-            data.erase(0, 3);
-
-        UINT codePage = utf8 ? CP_UTF8 : CP_ACP;
-        int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-        if (wlen <= 0)
-            return false;
-
-        std::wstring wdata(static_cast<size_t>(wlen), L'\0');
-        MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
-
-        std::wistringstream iss(wdata);
-        std::wstring line;
-        while (std::getline(iss, line))
-        {
-            if (!line.empty() && line.back() == L'\r')
-                line.pop_back();
-            lines.push_back(line);
-        }
-        return true;
-    }
-#else
-    bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
-    {
-        std::wifstream file(path);
-        if (!file.is_open())
-            return false;
-
-        std::wstring line;
-        while (std::getline(file, line))
-        {
-            if (!line.empty() && line.back() == L'\r')
-                line.pop_back();
-            lines.push_back(line);
-        }
-        return true;
-    }
-#endif
     std::map<std::wstring, std::wstring> s_textResponses;
     std::map<std::wstring, std::wstring> s_buttonResponses;
     std::wstring s_defaultResponse;
@@ -155,7 +104,7 @@ bool LoadChatConfig(const std::wstring& configPath)
     s_defaultResponse.clear();
 
     std::vector<std::wstring> lines;
-    if (!ReadFileLines(configPath, lines))
+    if (!TextFile::ReadLines(configPath, lines))
         return false;
 
     for (const auto& lineRaw : lines)

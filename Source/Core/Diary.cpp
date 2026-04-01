@@ -2,6 +2,7 @@
 #include "Path.h"
 #include "../Runtime/Scheduler.h"
 #include "../Runtime/EventBus.h"
+#include "TextFile.h"
 #include <windows.h>
 #include <fstream>
 #include <sstream>
@@ -37,90 +38,6 @@ void DiaryInit()
     });
 }
 
-static bool FileIsEmpty(const std::wstring& path)
-{
-    std::ifstream in(path, std::ios::binary | std::ios::ate);
-    if (!in.is_open())
-        return true;
-    return in.tellg() == 0;
-}
-
-static bool ReadFileText(const std::wstring& path, std::wstring& out)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return false;
-
-    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.empty())
-    {
-        out.clear();
-        return true;
-    }
-
-    bool utf8 = (data.size() >= 3 &&
-                 static_cast<unsigned char>(data[0]) == 0xEF &&
-                 static_cast<unsigned char>(data[1]) == 0xBB &&
-                 static_cast<unsigned char>(data[2]) == 0xBF);
-    if (utf8)
-        data.erase(0, 3);
-
-    UINT codePage = CP_UTF8;
-    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    if (wlen <= 0 && !utf8)
-    {
-        codePage = CP_ACP;
-        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    }
-    if (wlen <= 0)
-        return false;
-
-    out.assign(static_cast<size_t>(wlen), L'\0');
-    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &out[0], wlen);
-    return true;
-}
-
-static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return false;
-
-    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.empty())
-        return true;
-
-    bool utf8 = (data.size() >= 3 &&
-                 static_cast<unsigned char>(data[0]) == 0xEF &&
-                 static_cast<unsigned char>(data[1]) == 0xBB &&
-                 static_cast<unsigned char>(data[2]) == 0xBF);
-    if (utf8)
-        data.erase(0, 3);
-
-    UINT codePage = CP_UTF8;
-    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    if (wlen <= 0 && !utf8)
-    {
-        codePage = CP_ACP;
-        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    }
-    if (wlen <= 0)
-        return false;
-
-    std::wstring wdata(static_cast<size_t>(wlen), L'\0');
-    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
-
-    std::wistringstream iss(wdata);
-    std::wstring line;
-    while (std::getline(iss, line))
-    {
-        if (!line.empty() && line.back() == L'\r')
-            line.pop_back();
-        lines.push_back(line);
-    }
-    return true;
-}
-
 static std::wstring Trim(const std::wstring& s)
 {
     const wchar_t* ws = L" \t\r\n";
@@ -135,7 +52,7 @@ static bool GetDiaryScriptLineForDate(const DateTime& dt, std::wstring& out)
 {
     out.clear();
     std::vector<std::wstring> lines;
-    if (!ReadFileLines(GetConfigPath(L"diary_script.txt"), lines))
+    if (!TextFile::ReadLines(GetConfigPath(L"diary_script.txt"), lines))
         return false;
 
     const std::wstring keyA = std::to_wstring(dt.month) + L"月" + std::to_wstring(dt.day) + L"日";
@@ -178,7 +95,7 @@ void OnProgramStart()
 void DiaryAppendWritingLine(const std::wstring& line)
 {
     const std::wstring path = GetConfigPath(L"diary_writing.txt");
-    const bool empty = FileIsEmpty(path);
+    const bool empty = TextFile::FileIsEmpty(path);
 
     std::ofstream out(path, std::ios::binary | std::ios::app);
     if (!out.is_open())
@@ -201,7 +118,7 @@ void DiaryAppendWritingLine(const std::wstring& line)
 static void AppendDiaryEntry()
 {
     const std::wstring diaryPath = GetExeDir() + L"\\diary.txt";
-    const bool empty = FileIsEmpty(diaryPath);
+    const bool empty = TextFile::FileIsEmpty(diaryPath);
 
     std::ofstream out(diaryPath, std::ios::binary | std::ios::app);
     if (!out.is_open())
@@ -230,7 +147,7 @@ static void AppendDiaryEntry()
         entry += festivalLine + L"\n";
 
     std::wstring writing;
-    if (ReadFileText(GetConfigPath(L"diary_writing.txt"), writing) && !writing.empty())
+    if (TextFile::ReadText(GetConfigPath(L"diary_writing.txt"), writing) && !writing.empty())
         entry += writing + L"\n";
 
     const std::string utf8 = WideToUtf8(entry);

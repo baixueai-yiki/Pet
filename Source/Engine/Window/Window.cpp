@@ -10,6 +10,8 @@
 #include "Window.h"
 #include "../../Core/Path.h"
 #include "../../Core/Diary.h"
+#include "../../Core/TextFile.h"
+#include "../../Systems/Setting/Setting.h"
 #include "../../Runtime/Scheduler.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Systems/Chat/Chat.h"
@@ -28,86 +30,9 @@ static std::wstring Trim(const std::wstring& s)
         --e;
     return s.substr(b, e - b);
 }
-static std::wstring ToLower(std::wstring s)
-{
-    for (auto& ch : s)
-        ch = static_cast<wchar_t>(towlower(ch));
-    return s;
-}
-
-static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return false;
-
-    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.empty())
-        return true;
-
-    bool utf8 = (data.size() >= 3 &&
-                 static_cast<unsigned char>(data[0]) == 0xEF &&
-                 static_cast<unsigned char>(data[1]) == 0xBB &&
-                 static_cast<unsigned char>(data[2]) == 0xBF);
-    if (utf8)
-        data.erase(0, 3);
-
-    UINT codePage = CP_UTF8;
-    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    if (wlen <= 0 && !utf8)
-    {
-        codePage = CP_ACP;
-        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    }
-    if (wlen <= 0)
-        return false;
-
-    std::wstring wdata(static_cast<size_t>(wlen), L'\0');
-    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
-
-    std::wistringstream iss(wdata);
-    std::wstring line;
-    while (std::getline(iss, line))
-    {
-        if (!line.empty() && line.back() == L'\r')
-            line.pop_back();
-        lines.push_back(line);
-    }
-    return true;
-}
-
-static int ReadIntSetting(const std::wstring& key, int defaultValue)
-{
-    std::vector<std::wstring> lines;
-    if (!ReadFileLines(GetConfigPath(L"settings.txt"), lines))
-        return defaultValue;
-
-    for (const auto& lineRaw : lines)
-    {
-        std::wstring line = lineRaw;
-        if (line.empty() || line[0] == L'#')
-            continue;
-        size_t eq = line.find(L'=');
-        if (eq == std::wstring::npos)
-            continue;
-        std::wstring k = Trim(line.substr(0, eq));
-        std::wstring kLower = ToLower(k);
-        std::wstring keyLower = ToLower(key);
-        std::wstring v = Trim(line.substr(eq + 1));
-        if (kLower == keyLower ||
-            (keyLower == L"fps" && (k == L"帧率" || k == L"刷新率")))
-        {
-            std::wistringstream iss(v);
-            int out = defaultValue;
-            iss >> out;
-            return out;
-        }
-    }
-    return defaultValue;
-}
 static UINT GetRefreshIntervalMs()
 {
-    int fps = ReadIntSetting(L"fps", 60);
+    int fps = Setting::GetInt(L"fps", 60);
     if (fps != 30 && fps != 60 && fps != 120)
         fps = 60;
     return static_cast<UINT>(1000 / fps);
@@ -133,9 +58,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_NCHITTEST:
     {
-        // 只有宠物区域可点击，其余区域点击穿透
         int x = GET_X_LPARAM(lParam);
         int y = GET_Y_LPARAM(lParam);
+        // 如果设置面板在显示，允许对话区域接收事件
+        if (Setting::IsPointInsideOverlay(x, y))
+            return HTCLIENT;
         if (x >= g_pet.x && x <= g_pet.x + g_pet.w &&
             y >= g_pet.y && y <= g_pet.y + g_pet.h)
         {
@@ -149,7 +76,13 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_LBUTTONUP:
     case WM_LBUTTONDBLCLK:
     case WM_RBUTTONDOWN:
+        if (Setting::IsOverlayVisible() && Setting::HandleOverlayMouse(hwnd, msg, wParam, lParam))
+            break;
         HandleInput(hwnd, msg, wParam, lParam);
+        break;
+    case WM_MOUSEWHEEL:
+        if (Setting::IsOverlayVisible() && Setting::HandleOverlayMouse(hwnd, msg, wParam, lParam))
+            break;
         break;
     case WM_TIMER:
         // 拖动时按稳定频率重绘

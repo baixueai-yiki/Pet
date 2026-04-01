@@ -1,15 +1,19 @@
 ﻿#include "Render.h"
 #include "../../Core/Path.h"
 #include "../../Systems/Pet/Pet.h"
+#include "../../Systems/Setting/Setting.h"
 #include <gdiplus.h>
 #include <vector>
 #include <windows.h>
 
 using namespace Gdiplus;
 
+// 全局持有的 GDI+ 图片对象，RendererInit 只加载一次
 static Image* s_image = nullptr;
+// GDI+ 启动标记，用于 RendererShutdown 时反注册
 static ULONG_PTR s_token = 0;
 
+// 尝试多个路径加载资源（优先 assets，再 fallback 到源文件夹）
 static Image* LoadImageFromPaths(const std::vector<std::wstring>& paths)
 {
     for (const auto& path : paths)
@@ -47,6 +51,7 @@ bool RendererInit()
 
     const int imgW = static_cast<int>(s_image->GetWidth());
     const int imgH = static_cast<int>(s_image->GetHeight());
+    // 固定目标宽度为 200，等比缩放高度，方便不同设备下始终保持可见大小
     const int targetW = 200;
     if (imgW > 0 && imgH > 0)
     {
@@ -60,6 +65,7 @@ bool RendererInit()
         g_pet.h = imgH;
     }
 
+    // 默认放到屏幕中央，如果缩放后出界则 clamp
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
     g_pet.x = (screenW - g_pet.w) / 2;
@@ -70,7 +76,7 @@ bool RendererInit()
     return true;
 }
 
-// 使用窗口 HDC 绘制一帧（旧版：拖动时会闪烁）
+// 渲染当前帧： 清空透明背景，然后把宠物贴图画在 g_pet 的区域
 void RendererRender(HDC hdc)
 {
     if (!hdc || !s_image || s_image->GetLastStatus() != Ok)
@@ -79,9 +85,10 @@ void RendererRender(HDC hdc)
     Graphics graphics(hdc);
     graphics.Clear(Color(0, 0, 0, 0));
     graphics.DrawImage(s_image, g_pet.x, g_pet.y, g_pet.w, g_pet.h);
+    Setting::RenderOverlay(hdc);
 }
 
-// 释放 GDI+ 资源，重置状态
+// 退出时清理图片与 GDI+（防止内存泄漏）
 void RendererShutdown()
 {
     delete s_image;

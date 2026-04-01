@@ -2,6 +2,8 @@
 #include "../../Systems/Chat/Chat.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Core/Path.h"
+#include "../../Core/TextFile.h"
+#include "../../Systems/Setting/Setting.h"
 #include "../../Systems/Audio/Audio.h"
 #include "../../Runtime/EventBus.h"
 #include <cwctype>
@@ -22,47 +24,6 @@ static bool IsInsidePet(int x, int y)
            x <= g_pet.x + g_pet.w &&
            y >= g_pet.y &&
            y <= g_pet.y + g_pet.h;
-}
-
-static bool ReadFileLines(const std::wstring& path, std::vector<std::wstring>& lines)
-{
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return false;
-
-    std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    if (data.empty())
-        return true;
-
-    bool utf8 = (data.size() >= 3 &&
-                 static_cast<unsigned char>(data[0]) == 0xEF &&
-                 static_cast<unsigned char>(data[1]) == 0xBB &&
-                 static_cast<unsigned char>(data[2]) == 0xBF);
-    if (utf8)
-        data.erase(0, 3);
-
-    UINT codePage = CP_UTF8;
-    int wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    if (wlen <= 0 && !utf8)
-    {
-        codePage = CP_ACP;
-        wlen = MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), nullptr, 0);
-    }
-    if (wlen <= 0)
-        return false;
-
-    std::wstring wdata(static_cast<size_t>(wlen), L"\0"[0]);
-    MultiByteToWideChar(codePage, 0, data.data(), static_cast<int>(data.size()), &wdata[0], wlen);
-
-    std::wistringstream iss(wdata);
-    std::wstring line;
-    while (std::getline(iss, line))
-    {
-        if (!line.empty() && line.back() == L"\r"[0])
-            line.pop_back();
-        lines.push_back(line);
-    }
-    return true;
 }
 
 
@@ -118,30 +79,6 @@ static std::wstring ToLower(std::wstring s)
     return s;
 }
 
-static std::wstring ReadStringSetting(const std::wstring& key, const std::wstring& defaultValue)
-{
-    std::vector<std::wstring> lines;
-    if (!ReadFileLines(GetConfigPath(L"settings.txt"), lines))
-        return defaultValue;
-
-    for (const auto& lineRaw : lines)
-    {
-        std::wstring line = lineRaw;
-        if (line.empty() || line[0] == L'#')
-            continue;
-        size_t eq = line.find(L'=');
-        if (eq == std::wstring::npos)
-            continue;
-        std::wstring k = Trim(line.substr(0, eq));
-        std::wstring v = Trim(line.substr(eq + 1));
-        std::wstring kLower = ToLower(k);
-        std::wstring keyLower = ToLower(key);
-        if (kLower == keyLower ||
-            (keyLower == L"chat_trigger" && (k == L"唤出方式" || k == L"对话触发")))
-            return v;
-    }
-    return defaultValue;
-}
 
 static std::wstring NormalizeTrigger(std::wstring v)
 {
@@ -230,7 +167,7 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (!IsInsidePet(x, y))
             break;
 
-        std::wstring trigger = NormalizeTrigger(ReadStringSetting(L"唤出方式", L"right_click_combo"));
+        std::wstring trigger = NormalizeTrigger(Setting::GetString(L"唤出方式", L"right_click_combo"));
         if (trigger == L"right_click_once")
         {
             ChatShowInput(hwnd);

@@ -14,3 +14,8 @@ void DiarySetStateSnapshotProvider(StateSnapshotProvider provider);
 
 // 注册日记相关事件订阅
 void DiaryInit();
+
+// 通过 diary_script.txt / monitor_game.txt 等配置按 key 追加日记
+void DiaryLogByKey(const std::wstring& key);
+// 按 monitor 关键词记录日记（尽量避免重复）
+void DiaryLogByKeyword(const std::wstring& key, const std::wstring& category, int maxCount);

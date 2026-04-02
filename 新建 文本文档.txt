@@ -30,6 +30,11 @@
 │  │
 │  ├─ UI/                   
 │  │  ├─ UIActor.h/cpp     # UIActor 
+│  │  ├─ UIComponents/    # UI组件
+│  │  │  ├─ CloseComponent.h/cpp（关闭界面）
+│  │  │  ├─ ScrollComponent.h/cpp（滚轮滑动）
+│  │  │  ├─ DragComponent.h/cpp （拖动窗口）
+│  │  │  └─ InputComponent.h/cpp（输入文字）
 │  │  └─ UIPanels/         # UI界面
 │  │     ├─ ChatPanels.h/cpp（聊天UI）
 │  │     ├─ TaskPanels.h/cpp（任务UI）
@@ -43,3 +48,27 @@
 ├─ Main/
 │  └─ main.cpp             # 启动入口
 
+
+
+
+
+
+
+备份：
+拖拽组件（DragComponent）
+可拖动窗口/面板，处理鼠标按下+移动事件
+
+焦点/选中组件（FocusComponent / SelectComponent）
+处理输入焦点、选中状态，高亮或者键盘操作
+
+动画/过渡组件（TweenComponent / AnimationComponent）
+面板显示、隐藏、弹出动画，或者 GIF/帧动画
+
+缩放/调整组件（ResizeComponent）
+可调整面板大小的逻辑
+
+提示/浮层组件（TooltipComponent / OverlayComponent）
+悬浮提示、气泡、徽章等独立显示层
+
+输入捕获组件（InputCaptureComponent）
+处理键盘/鼠标事件拦截，比如输入框或快捷键

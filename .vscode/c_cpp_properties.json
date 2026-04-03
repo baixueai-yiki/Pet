@@ -7,6 +7,7 @@
             "includePath": [
                 "${workspaceFolder}/Source",
                 "${workspaceFolder}/Source/Systems",
+                "${workspaceFolder}/Source/Systems/UI",
                 "${workspaceFolder}/Source/Engine",
                 "${workspaceFolder}/Source/Core",
                 "${workspaceFolder}/Source/Runtime",

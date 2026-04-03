@@ -1,6 +1,7 @@
 ﻿#include "Pet.h"
 #include "../Chat/Chat.h"
 #include "PetComponents/AudioComponent.h"
+#include "../UI/UIManager.h"
 #include "../../Core/Diary.h"
 #include "../../Core/Path.h"
 #include "../../Runtime/Scheduler.h"
@@ -350,6 +351,7 @@ void PetInitSystems(HWND hwnd, unsigned int idleCheckMs)
 {
     DiaryInit();
     OnProgramStart();
+    UI::Initialize(hwnd);
     PetActor::Get().Initialize(hwnd, idleCheckMs);
 }
 
@@ -357,6 +359,7 @@ void PetInitSystems(HWND hwnd, unsigned int idleCheckMs)
 void PetOnExit()
 {
     OnProgramExit();
+    UI::Shutdown();
     PetActor::Get().Shutdown();
 }
 

@@ -25,7 +25,6 @@
 │  │  └─ PetComponents/    # 桌宠组件
 │  │     ├─ ChatComponent.h/cpp（桌宠发言）
 │  │     ├─ AudioComponent.h/cpp（桌宠音频）
-│  │     ├─ DiaryComponent.h/cpp（桌宠日记）
 │  │     └─ InputComponent.h/cpp（输入文字）
 │  │
 │  ├─ UI/                   

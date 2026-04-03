@@ -22,8 +22,6 @@
 #include <fstream>
 #include <cwctype>
 #include <tlhelp32.h>
-#include "Systems/Audio/Audio.h"
-
 // 全局静态状态（仅当前cpp使用）
 static HWND s_hInputWnd = nullptr;// 当前输入窗口句柄
 static HWND s_hButtonWnd = nullptr;// 当前按钮窗口句柄

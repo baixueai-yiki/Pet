@@ -1,6 +1,6 @@
 ﻿#include "Pet.h"
 #include "../Chat/Chat.h"
-#include "../Audio/Audio.h"
+#include "PetComponents/AudioComponent.h"
 #include "../../Core/Diary.h"
 #include "../../Core/Path.h"
 #include "../../Runtime/Scheduler.h"
@@ -348,12 +348,15 @@ bool PetCheckMonitorKeywords(const std::vector<PetAppEntry>& entries,
 // 在主窗口的 WM_CREATE 时由 Window 调用，启动 Actor+各组件
 void PetInitSystems(HWND hwnd, unsigned int idleCheckMs)
 {
+    DiaryInit();
+    OnProgramStart();
     PetActor::Get().Initialize(hwnd, idleCheckMs);
 }
 
 // 程序退出或会话结束时调用，用于逐个 Shutdown 组件
 void PetOnExit()
 {
+    OnProgramExit();
     PetActor::Get().Shutdown();
 }
 
@@ -367,32 +370,6 @@ namespace
         {
             if (HWND hwnd = actor.GetWindow())
                 ChatSystem::Get().Init(hwnd);
-        }
-    };
-
-    // 启动音频层的事件订阅
-    class AudioComponent : public PetComponent
-    {
-    public:
-        void OnInit(PetActor&) override
-        {
-            AudioInit();
-        }
-    };
-
-    // 守护日记模块，在启动和退出时刷新输出
-    class DiaryComponent : public PetComponent
-    {
-    public:
-        void OnInit(PetActor&) override
-        {
-            DiaryInit();
-            OnProgramStart();
-        }
-
-        void OnShutdown(PetActor&) override
-        {
-            OnProgramExit();
         }
     };
 
@@ -439,8 +416,8 @@ void PetActor::EnsureDefaultComponents()
 
     AddComponent(std::make_unique<ChatComponent>());
     AddComponent(std::make_unique<AudioComponent>());
-    AddComponent(std::make_unique<DiaryComponent>());
     AddComponent(std::make_unique<SchedulerComponent>());
+    // DiaryInit/OnProgramStart/OnProgramExit are managed in PetInitSystems/PetOnExit.
     m_componentsRegistered = true;
 }
 

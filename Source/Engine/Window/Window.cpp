@@ -9,13 +9,11 @@
 #include "../Render/Render.h"
 #include "Window.h"
 #include "../../Core/Path.h"
-#include "../../Core/Diary.h"
 #include "../../Core/TextFile.h"
 #include "../../Systems/Setting/Setting.h"
 #include "../../Runtime/Scheduler.h"
 #include "../../Systems/Pet/Pet.h"
 #include "../../Systems/Chat/Chat.h"
-#include "../../Systems/Audio/Audio.h"
 
 static const UINT_PTR kIdleCheckTimer = 2;
 static const UINT kIdleCheckMs = 60000;
@@ -47,12 +45,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         // 使用定时器让拖动时的重绘更顺滑
         SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
         SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
-        ChatInit(hwnd);
-        AudioInit();
-        DiaryInit();
-        SchedulerClear();
-        ScheduleEveryMs(L"tick.minute", kIdleCheckMs);
-        OnProgramStart();
+        PetInitSystems(hwnd, kIdleCheckMs);
         break;
 
 
@@ -135,7 +128,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (!s_exitHandled)
         {
             s_exitHandled = true;
-            OnProgramExit();
+            PetOnExit();
         }
         PostQuitMessage(0);
         return 0;
@@ -144,7 +137,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (!s_exitHandled)
         {
             s_exitHandled = true;
-            OnProgramExit();
+            PetOnExit();
         }
         return TRUE;
 
@@ -152,7 +145,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (wParam && !s_exitHandled)
         {
             s_exitHandled = true;
-            OnProgramExit();
+            PetOnExit();
         }
         return 0;
 

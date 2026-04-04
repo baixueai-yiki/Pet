@@ -4,6 +4,7 @@
 #include "../../Core/Path.h"
 #include "../../Core/TextFile.h"
 #include "../../Systems/Setting/Setting.h"
+#include "../../Systems/UI/UIManager.h"
 #include "../../Runtime/EventBus.h"
 #include <cwctype>
 #include <fstream>
@@ -121,10 +122,6 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         {
             g_pet.x = x - g_pet.dragOffsetX;
             g_pet.y = y - g_pet.dragOffsetY;
-            ChatUpdateInputPosition();
-            ChatUpdateTalkPosition();
-            ChatUpdateButtonPosition();
-            ChatUpdateTaskListPosition();
             InvalidateRect(hwnd, nullptr, TRUE);
         }
 
@@ -158,46 +155,20 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         s_dragInteractionLogged = false;
         g_pet.isDragging = false;
         InvalidateRect(hwnd, nullptr, TRUE);
+        UI::DispatchMouseClick(x, y);
         break;
 
     case WM_RBUTTONDOWN:
     {
-        // 仅在宠物区域内触发聊天
         if (!IsInsidePet(x, y))
             break;
-
-        std::wstring trigger = NormalizeTrigger(Setting::GetString(L"唤出方式", L"right_click_combo"));
-        if (trigger == L"right_click_once")
-        {
-            ChatShowInput(hwnd);
-            break;
-        }
-
-        // 右键时间序列滑动，用来检测慢三连 + 快三连
-        for (int i = 0; i < 5; ++i)
-            s_rightClickTimes[i] = s_rightClickTimes[i + 1];
-        s_rightClickTimes[5] = GetTickCount();
-        if (s_rightClickCount < 6)
-            ++s_rightClickCount;
-
-        const DWORD slowMax = 1000;
-        const DWORD fastMax = 300;
-
-        if (s_rightClickCount < 6)
-            break;
-
-        bool slowTriple = (s_rightClickTimes[3] - s_rightClickTimes[0] <= slowMax);
-        bool fastTriple = (s_rightClickTimes[5] - s_rightClickTimes[3] <= fastMax);
-
-        if (slowTriple && fastTriple)
-        {
-            for (int i = 0; i < 6; ++i)
-                s_rightClickTimes[i] = 0;
-            s_rightClickCount = 0;
-            ChatShowInput(hwnd);
-        }
+        UI::DispatchMouseClick(x, y);
         break;
     }
+
+    case WM_MOUSEWHEEL:
+        UI::DispatchMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        break;
 
     default:
         break;

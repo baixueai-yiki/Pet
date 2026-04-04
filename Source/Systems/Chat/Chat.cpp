@@ -1,7 +1,9 @@
-﻿#include <windows.h>
+#include <windows.h>
 #include <windowsx.h>
 #include <imm.h>
 #include "Chat.h"
+#include "../UI/UIPanels/ChatPanels.h"
+#include "../UI/UIPanels/TaskPanels.h"
 #include "Core/Path.h"
 #include "Core/Diary.h"
 #include "Core/TextFile.h"
@@ -23,52 +25,12 @@
 #include <cwctype>
 #include <tlhelp32.h>
 // 全局静态状态（仅当前cpp使用）
-static HWND s_hInputWnd = nullptr;// 当前输入窗口句柄
-static HWND s_hButtonWnd = nullptr;// 当前按钮窗口句柄
-static std::wstring s_inputText;// 当前输入框中的文本内容
-static POINT s_dragOffset;// 鼠标拖拽偏移
-static bool s_dragging = false;// 拖拽状态
 static std::map<std::wstring, std::wstring> s_dialogMap;// 聊天配置表
 static std::map<std::wstring, std::wstring> s_buttonMap;// 按钮选项配置
 static std::map<std::wstring, std::wstring> s_buttonLabelMap;// 按钮显示文本配置
-static HFONT s_inputFont = nullptr; // 统一输入窗口字体，避免中文显示乱码
-static std::wstring s_imeText; // 输入法组合字符串
-static std::wstring s_buttonKey1; // 当前按钮1逻辑键
-static std::wstring s_buttonKey2; // 当前按钮2逻辑键
-static const int kInputWidth = 300;
-static const int kInputHeight = 40;
-static const int kButtonHeight = 80;
-
-static int GetInputWidth()
-{
-    return (g_pet.w > 0) ? g_pet.w : kInputWidth;
-}
-
-static void GetInputRect(int& x, int& y, int& w, int& h)
-{
-    w = GetInputWidth();
-    h = kInputHeight;
-    x = g_pet.x;
-    y = g_pet.y - h - 10;
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
-}
-
-static void GetButtonRect(int& x, int& y, int& w, int& h)
-{
-    w = GetInputWidth();
-    h = kButtonHeight;
-    x = g_pet.x;
-    y = g_pet.y - h - 10;
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
-}
 static std::wstring s_dialogPath;
 static FILETIME s_dialogWriteTime = {};
 static bool s_hasDialogTime = false;
-static HWND s_hTalkWnd = nullptr;
-static std::wstring s_talkText;
-static HWND s_hTaskWnd = nullptr;
 struct TaskEntry
 {
     std::wstring title;
@@ -77,33 +39,16 @@ struct TaskEntry
     std::wstring processName;
 };
 static std::vector<TaskEntry> s_taskEntries;
-static int s_taskSelected = -1;
-static HWND s_hKillBtn = nullptr;
-static DWORD s_taskSelectedPid = 0;
 static std::set<std::wstring> s_gameActiveKeys;
 static std::set<std::wstring> s_gameActiveGameKeys;
 static std::set<std::wstring> s_gameActiveWorkKeys;
 static int s_monitorState = 0;
 static std::set<std::wstring> s_diaryLoggedCategories;
 static std::map<std::wstring, int> s_diaryCategoryCounts;
-static HFONT s_talkFont = nullptr;
-static const int kTalkMaxWidth = 240;
-static const int kTalkPadding = 8;
-static const int kTalkCorner = 10;
-static const int kTalkTail = 10;
-static bool s_talkOnRight = true;
-static const UINT_PTR kTalkAutoHideTimer = 1;
-static const UINT kTalkAutoHideMs = 3000;
 static HANDLE s_quitTimer = nullptr;
 static const DWORD kQuitDelayMs = 5000;
 static HWND s_mainHwnd = nullptr;
 static bool s_sleepPromptActive = false;
-static const int kTaskHeight = 200;
-static const UINT_PTR kTaskRefreshTimer = 2;
-static const UINT kTaskRefreshMs = 5000;
-static const int kTaskPadding = 10;
-static const int kTaskLineH = 24;
-static const int kTaskIcon = 16;
 struct ChatState
 {
     long long lastInteraction;
@@ -851,53 +796,6 @@ static void LoadDialogConfig()
     UpdateDialogMetadata(path);
 }
 
-static void MeasureTalkText(int maxWidth, int& outW, int& outH)
-{
-    HDC hdc = GetDC(nullptr);
-    RECT rc = { 0, 0, maxWidth, 0 };
-    if (s_talkFont)
-        SelectObject(hdc, s_talkFont);
-    DrawTextW(hdc, s_talkText.c_str(), -1, &rc, DT_CALCRECT | DT_WORDBREAK);
-    ReleaseDC(nullptr, hdc);
-
-    outW = (rc.right - rc.left) + kTalkPadding * 2;
-    outH = (rc.bottom - rc.top) + kTalkPadding * 2;
-    if (outW < 80) outW = 80;
-    if (outH < 32) outH = 32;
-}
-
-static void PositionTalkWindow(int w, int h)
-{
-    int screenW = GetSystemMetrics(SM_CXSCREEN);
-    int screenH = GetSystemMetrics(SM_CYSCREEN);
-
-    int x = g_pet.x + g_pet.w + 10;
-    int y = g_pet.y + (g_pet.h - h) / 2;
-    if (x + w > screenW)
-    {
-        x = g_pet.x - w - 10;
-        s_talkOnRight = false;
-    }
-    else
-    {
-        s_talkOnRight = true;
-    }
-    if (x < 0) x = 0;
-    if (y + h > screenH) y = screenH - h;
-    if (y < 0) y = 0;
-
-    SetWindowPos(s_hTalkWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-}
-
-static void PositionTaskWindow(int w, int h)
-{
-    int x = g_pet.x;
-    int y = g_pet.y - h - 10;
-    if (x < 0) x = 0;
-    if (y < 0) y = 0;
-    SetWindowPos(s_hTaskWnd, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-}
-
 static bool IsAppWindow(HWND hwnd)
 {
     if (!IsWindowVisible(hwnd) || IsIconic(hwnd))
@@ -943,9 +841,6 @@ static void ClearTaskEntries()
             DestroyIcon(e.icon);
     }
     s_taskEntries.clear();
-    s_taskSelected = -1;
-    if (s_hKillBtn)
-        ShowWindow(s_hKillBtn, SW_HIDE);
 }
 
 static HICON GetWindowIconByPath(HWND hwnd)
@@ -977,7 +872,6 @@ static HICON GetWindowIconByPath(HWND hwnd)
 
 static void BuildTaskListEntries()
 {
-    DWORD prevPid = s_taskSelectedPid;
     ClearTaskEntries();
 
     std::vector<HWND> hwnds;
@@ -1011,363 +905,14 @@ static void BuildTaskListEntries()
             s_taskEntries.push_back(entry);
         }
     }
-
-    if (prevPid != 0)
-    {
-        for (int i = 0; i < static_cast<int>(s_taskEntries.size()); ++i)
-        {
-            if (s_taskEntries[i].pid == prevPid)
-            {
-                s_taskSelected = i;
-                s_taskSelectedPid = prevPid;
-                return;
-            }
-        }
-        s_taskSelected = -1;
-        s_taskSelectedPid = 0;
-        HideKillButton();
-    }
-}
-
-static bool KillSelectedTask()
-{
-    if (s_taskSelected < 0 || s_taskSelected >= static_cast<int>(s_taskEntries.size()))
-        return false;
-
-    DWORD pid = s_taskEntries[s_taskSelected].pid;
-    if (pid == 0 || pid == GetCurrentProcessId())
-        return false;
-
-    HANDLE hProcess = OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-    if (!hProcess)
-        return false;
-
-    BOOL ok = TerminateProcess(hProcess, 0);
-    CloseHandle(hProcess);
-    return ok == TRUE;
-}
-
-static void HideKillButton()
-{
-    if (s_hKillBtn)
-        ShowWindow(s_hKillBtn, SW_HIDE);
-}
-
-static void ShowKillButtonAt(int x, int y)
-{
-    if (!s_hKillBtn)
-        return;
-
-    const int btnW = 90;
-    const int btnH = 26;
-    SetWindowPos(s_hKillBtn, nullptr, x, y, btnW, btnH, SWP_NOACTIVATE | SWP_SHOWWINDOW);
-    ShowWindow(s_hKillBtn, SW_SHOW);
-}
-
-static LRESULT CALLBACK TaskListProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_TIMER:
-        if (wParam == kTaskRefreshTimer)
-        {
-            BuildTaskListEntries();
-            InvalidateRect(hwnd, nullptr, TRUE);
-        }
-        return 0;
-    case WM_LBUTTONDOWN:
-        // 左键任意处收回任务管理器
-        DestroyWindow(hwnd);
-        return 0;
-    case WM_RBUTTONDOWN:
-    {
-        int y = GET_Y_LPARAM(lParam);
-        int index = (y - kTaskPadding) / kTaskLineH;
-        if (index >= 0 && index < static_cast<int>(s_taskEntries.size()))
-        {
-            if (s_taskSelected == index)
-            {
-                s_taskSelected = -1;
-                s_taskSelectedPid = 0;
-                HideKillButton();
-                InvalidateRect(hwnd, nullptr, TRUE);
-                return 0;
-            }
-
-            s_taskSelected = index;
-            s_taskSelectedPid = s_taskEntries[index].pid;
-            InvalidateRect(hwnd, nullptr, TRUE);
-            if (s_hKillBtn)
-                EnableWindow(s_hKillBtn, TRUE);
-
-            // 按钮显示在被选中项右对齐
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            const int btnW = 90;
-            const int btnH = 26;
-            int itemTop = kTaskPadding + index * kTaskLineH;
-            int bx = rc.right - kTaskPadding - btnW;
-            int by = itemTop + (kTaskLineH - btnH) / 2;
-            ShowKillButtonAt(bx, by);
-        }
-        else
-        {
-            s_taskSelected = -1;
-            HideKillButton();
-        }
-        return 0;
-    }
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        HBRUSH brush = CreateSolidBrush(RGB(255, 240, 245));
-        FillRect(hdc, &rc, brush);
-        DeleteObject(brush);
-
-        if (s_inputFont)
-            SelectObject(hdc, s_inputFont);
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(50, 50, 50));
-
-        int x = kTaskPadding;
-        int y = kTaskPadding;
-        for (int i = 0; i < static_cast<int>(s_taskEntries.size()); ++i)
-        {
-            const auto& e = s_taskEntries[i];
-            if (i == s_taskSelected)
-            {
-                RECT sel = { x - 4, y - 2, rc.right - kTaskPadding, y + kTaskLineH };
-                HBRUSH selBrush = CreateSolidBrush(RGB(255, 220, 230));
-                FillRect(hdc, &sel, selBrush);
-                DeleteObject(selBrush);
-            }
-            if (e.icon)
-                DrawIconEx(hdc, x, y + 4, e.icon, kTaskIcon, kTaskIcon, 0, nullptr, DI_NORMAL);
-
-            RECT trc = { x + kTaskIcon + 8, y, rc.right - kTaskPadding, y + kTaskLineH };
-            DrawTextW(hdc, e.title.c_str(), -1, &trc, DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
-
-            y += kTaskLineH;
-            if (y + kTaskLineH > rc.bottom)
-                break;
-        }
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_DESTROY:
-        KillTimer(hwnd, kTaskRefreshTimer);
-        ClearTaskEntries();
-        s_hKillBtn = nullptr;
-        s_hTaskWnd = nullptr;
-        return 0;
-    case WM_COMMAND:
-        if (HIWORD(wParam) == BN_CLICKED && LOWORD(wParam) == 1)
-        {
-            if (MessageBoxW(hwnd, L"确定要强行结束该进程吗？", L"清理进程", MB_OKCANCEL | MB_ICONWARNING) == IDOK)
-                KillSelectedTask();
-        }
-        return 0;
-    default:
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-}
-static LRESULT CALLBACK TalkProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_TIMER:
-        if (wParam == kTalkAutoHideTimer)
-        {
-            KillTimer(hwnd, kTalkAutoHideTimer);
-            DestroyWindow(hwnd);
-            return 0;
-        }
-        break;
-    case WM_LBUTTONDOWN:
-        DestroyWindow(hwnd);
-        return 0;
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        HBRUSH brush = CreateSolidBrush(RGB(255, 250, 230));
-        HPEN pen = CreatePen(PS_SOLID, 1, RGB(220, 200, 170));
-        HGDIOBJ oldBrush = SelectObject(hdc, brush);
-        HGDIOBJ oldPen = SelectObject(hdc, pen);
-
-        // 圆角气泡
-        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, kTalkCorner, kTalkCorner);
-
-        // 尖角（朝向桌宠）
-        POINT tail[3];
-        if (s_talkOnRight)
-        {
-            tail[0] = { rc.left, rc.top + (rc.bottom - rc.top) / 2 - kTalkTail };
-            tail[1] = { rc.left - kTalkTail, rc.top + (rc.bottom - rc.top) / 2 };
-            tail[2] = { rc.left, rc.top + (rc.bottom - rc.top) / 2 + kTalkTail };
-        }
-        else
-        {
-            tail[0] = { rc.right, rc.top + (rc.bottom - rc.top) / 2 - kTalkTail };
-            tail[1] = { rc.right + kTalkTail, rc.top + (rc.bottom - rc.top) / 2 };
-            tail[2] = { rc.right, rc.top + (rc.bottom - rc.top) / 2 + kTalkTail };
-        }
-        Polygon(hdc, tail, 3);
-
-        SelectObject(hdc, oldBrush);
-        SelectObject(hdc, oldPen);
-        DeleteObject(brush);
-        DeleteObject(pen);
-
-        if (s_talkFont)
-            SelectObject(hdc, s_talkFont);
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(50, 50, 50));
-
-        RECT textRc = rc;
-        textRc.left += kTalkPadding;
-        textRc.top += kTalkPadding;
-        textRc.right -= kTalkPadding;
-        textRc.bottom -= kTalkPadding;
-        DrawTextW(hdc, s_talkText.c_str(), -1, &textRc, DT_WORDBREAK);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_DESTROY:
-        KillTimer(hwnd, kTalkAutoHideTimer);
-        s_hTalkWnd = nullptr;
-        return 0;
-    default:
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-    return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
 // 对话输出
 void ChatTalk(HWND hwnd, const wchar_t* text)
 {
-    if (hwnd)
-        s_mainHwnd = hwnd;
-    s_talkText = text ? text : L"";
-
-    if (!s_talkFont)
-    {
-        s_talkFont = CreateFontW(
-            18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei UI");
-    }
-
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = TalkProc;
-    wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = L"ChatTalkWnd";
-    static bool registered = false;
-    if (!registered)
-    {
-        RegisterClassW(&wc);
-        registered = true;
-    }
-
-    if (!s_hTalkWnd)
-    {
-        s_hTalkWnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-            wc.lpszClassName,
-            nullptr,
-            WS_POPUP,
-            0, 0, 10, 10,
-            hwnd,
-            nullptr,
-            GetModuleHandle(NULL),
-            nullptr
-        );
-        SetLayeredWindowAttributes(s_hTalkWnd, 0, 235, LWA_ALPHA);
-    }
-
-    int w = 0, h = 0;
-    MeasureTalkText(kTalkMaxWidth, w, h);
-    PositionTalkWindow(w, h);
-    ShowWindow(s_hTalkWnd, SW_SHOW);
-    InvalidateRect(s_hTalkWnd, nullptr, TRUE);
-    SetTimer(s_hTalkWnd, kTalkAutoHideTimer, kTalkAutoHideMs, nullptr);
+    ChatPanels::Talk(hwnd, text);
 }
 
-
-static void ChatShowTaskList(HWND hwndParent)
-{
-    if (!s_inputFont)
-    {
-        s_inputFont = CreateFontW(
-            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei UI");
-    }
-
-    BuildTaskListEntries();
-
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = TaskListProc;
-    wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = L"TaskListWnd";
-    static bool registered = false;
-    if (!registered)
-    {
-        RegisterClassW(&wc);
-        registered = true;
-    }
-
-    if (!s_hTaskWnd)
-    {
-        const int width = GetInputWidth();
-        const int height = kTaskHeight;
-        s_hTaskWnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-            wc.lpszClassName,
-            nullptr,
-            WS_POPUP,
-            0, 0, width, height,
-            hwndParent,
-            nullptr,
-            GetModuleHandle(NULL),
-            nullptr
-        );
-        SetLayeredWindowAttributes(s_hTaskWnd, 0, 220, LWA_ALPHA);
-    }
-
-    if (!s_hKillBtn)
-    {
-        s_hKillBtn = CreateWindowW(L"BUTTON", L"清理",
-            WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-            0, 0, 90, 26,
-            s_hTaskWnd, (HMENU)1, GetModuleHandle(NULL), nullptr);
-        if (s_inputFont)
-            SendMessageW(s_hKillBtn, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
-        EnableWindow(s_hKillBtn, FALSE);
-        ShowWindow(s_hKillBtn, SW_HIDE);
-    }
-    else
-    {
-        EnableWindow(s_hKillBtn, FALSE);
-        ShowWindow(s_hKillBtn, SW_HIDE);
-    }
-
-    ChatUpdateTaskListPosition();
-    ShowWindow(s_hTaskWnd, SW_SHOW);
-    InvalidateRect(s_hTaskWnd, nullptr, TRUE);
-    int refreshSec = Setting::GetInt(L"任务刷新秒", 5);
-    if (refreshSec < 1) refreshSec = 1;
-    if (refreshSec > 60) refreshSec = 60;
-    SetTimer(s_hTaskWnd, kTaskRefreshTimer, refreshSec * 1000, nullptr);
-
-}
 
 // 文字输入处理逻辑
 void ChatHandleInput(HWND hwnd, const std::wstring& input)
@@ -1387,7 +932,7 @@ void ChatHandleInput(HWND hwnd, const std::wstring& input)
 
     if (IsTaskListTrigger(normalized))
     {
-        ChatShowTaskList(hwnd);
+        ChatTalk(hwnd, L"任务管理器功能暂不可用。");
         return;
     }
 
@@ -1425,7 +970,7 @@ void ChatHandleInput(HWND hwnd, const std::wstring& input)
 }
 
 // 按钮输入处理逻辑
-static void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
+void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
 {
     ChatRecordInteraction();
 
@@ -1440,7 +985,6 @@ static void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
         ChatTalk(GetParent(buttonWnd), it->second.c_str());
 
     DestroyWindow(buttonWnd);
-    s_hButtonWnd = nullptr;
 
     // 点击按钮后：先显示文本，确认后延时退出进程
     if (key == L"我爱你_2")
@@ -1455,507 +999,26 @@ static void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
     }
 }
 
-static std::wstring GetButtonLabel(const std::wstring& key, const std::wstring& fallback)
+std::wstring ChatGetButtonLabel(const std::wstring& key, const std::wstring& fallback)
 {
     auto it = s_buttonLabelMap.find(key);
     return (it != s_buttonLabelMap.end()) ? it->second : fallback;
 }
 
-// 文字输入窗口过程
-static LRESULT CALLBACK TextInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    static bool flash = false;
-
-    switch (msg)
-    {
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        HBRUSH hBrush = CreateSolidBrush(flash ? RGB(255, 200, 220) : RGB(255, 240, 245));
-        FillRect(hdc, &rc, hBrush);
-        DeleteObject(hBrush);
-
-        if (s_inputFont)
-            SelectObject(hdc, s_inputFont);
-        SetBkMode(hdc, TRANSPARENT);
-        std::wstring display = s_inputText + s_imeText;
-        DrawTextW(hdc, display.c_str(), -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        EndPaint(hwnd, &ps);
-
-        flash = false;
-        break;
-    }
-    case WM_LBUTTONDOWN:
-        flash = true;
-        InvalidateRect(hwnd, nullptr, TRUE);
-        s_dragOffset.x = LOWORD(lParam);
-        s_dragOffset.y = HIWORD(lParam);
-        s_dragging = true;
-        SetCapture(hwnd);
-        break;
-    case WM_LBUTTONUP:
-        s_dragging = false;
-        ReleaseCapture();
-        break;
-    case WM_MOUSEMOVE:
-        if (s_dragging)
-        {
-            POINT pt = { LOWORD(lParam), HIWORD(lParam) };
-            ClientToScreen(hwnd, &pt);
-            SetWindowPos(hwnd, HWND_TOPMOST, pt.x - s_dragOffset.x, pt.y - s_dragOffset.y,
-                0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-        }
-        break;
-    case WM_CHAR:
-        if (wParam == VK_RETURN)
-        {
-            // 回车提交前，把输入法组合串并入正式文本
-            if (!s_imeText.empty())
-            {
-                s_inputText += s_imeText;
-                s_imeText.clear();
-            }
-            DestroyWindow(hwnd);
-        }
-        else if (wParam == VK_BACK)
-        {
-            if (!s_inputText.empty())
-                s_inputText.pop_back();
-            InvalidateRect(hwnd, nullptr, TRUE);
-        }
-        else
-        {
-            s_inputText.push_back((wchar_t)wParam);
-            InvalidateRect(hwnd, nullptr, TRUE);
-        }
-        break;
-    case WM_IME_COMPOSITION:
-    {
-        HIMC hImc = ImmGetContext(hwnd);
-        if (hImc)
-        {
-            // 处理输入法的临时组合字符串
-            if (lParam & GCS_COMPSTR)
-            {
-                LONG len = ImmGetCompositionStringW(hImc, GCS_COMPSTR, nullptr, 0);
-                if (len > 0)
-                {
-                    std::wstring buf(len / sizeof(wchar_t), L'\0');
-                    ImmGetCompositionStringW(hImc, GCS_COMPSTR, &buf[0], len);
-                    s_imeText = buf;
-                }
-            }
-
-            // 处理已提交的结果字符串
-            if (lParam & GCS_RESULTSTR)
-            {
-                LONG len = ImmGetCompositionStringW(hImc, GCS_RESULTSTR, nullptr, 0);
-                if (len > 0)
-                {
-                    std::wstring buf(len / sizeof(wchar_t), L'\0');
-                    ImmGetCompositionStringW(hImc, GCS_RESULTSTR, &buf[0], len);
-                    s_inputText += buf;
-                }
-                s_imeText.clear();
-            }
-            ImmReleaseContext(hwnd, hImc);
-        }
-        InvalidateRect(hwnd, nullptr, TRUE);
-        return 0;
-    }
-    case WM_DESTROY:
-        if (!s_inputText.empty())
-        {
-            ChatHandleInput(GetParent(hwnd), s_inputText);
-        }
-        s_hInputWnd = nullptr;
-        break;
-    default:
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-    return 0;
-}
-
-// 按钮输入窗口过程
-static LRESULT CALLBACK ButtonInputProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
-    switch (msg)
-    {
-    case WM_PAINT:
-    {
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        HBRUSH hBrush = CreateSolidBrush(RGB(255, 240, 245));
-        FillRect(hdc, &rc, hBrush);
-        DeleteObject(hBrush);
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
-    case WM_ERASEBKGND:
-        return 1;
-    case WM_COMMAND:
-        if (HIWORD(wParam) == BN_CLICKED)
-        {
-            int id = LOWORD(wParam);
-            std::wstring key = (id == 1) ? s_buttonKey1 : s_buttonKey2;
-            ChatHandleButtonInput(hwnd, key);
-        }
-        break;
-    case WM_DESTROY:
-        s_hButtonWnd = nullptr;
-        break;
-    default:
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-    return 0;
-}
 
 // 显示文字输入窗口
 void ChatShowInput(HWND hwndParent)
 {
-    // 已展开则收起（右键切换展开/收起）
-    if (s_hInputWnd)
-    {
-        DestroyWindow(s_hInputWnd);
-        s_hInputWnd = nullptr;
-        return;
-    }
-
-    const int width = GetInputWidth();
-    const int height = kInputHeight;
-    s_inputText.clear();
-
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = TextInputProc;
-    wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = L"ChatInputWnd";
-    static bool registered = false;
-    if (!registered)
-    {
-        RegisterClassW(&wc);
-        registered = true;
-    }
-
-    s_hInputWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-        wc.lpszClassName,
-        nullptr,
-        WS_POPUP,
-        150, 150,
-        width, height,
-        hwndParent,
-        nullptr,
-        GetModuleHandle(NULL),
-        nullptr
-    );
-    if (!s_hInputWnd) return;
-    if (!s_inputFont)
-    {
-        s_inputFont = CreateFontW(
-            20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
-            L"Microsoft YaHei UI");
-    }
-    if (s_inputFont)
-        SendMessageW(s_hInputWnd, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
-    SetLayeredWindowAttributes(s_hInputWnd, 0, 220, LWA_ALPHA);
-    ShowWindow(s_hInputWnd, SW_SHOW);
-    SetFocus(s_hInputWnd);
-
-    ChatUpdateInputPosition();
+    ChatPanels::ShowInput(hwndParent);
 }
 
-void ChatUpdateInputPosition()
-{
-    if (!s_hInputWnd)
-        return;
-
-    int x = 0, y = 0, w = 0, h = 0;
-    GetInputRect(x, y, w, h);
-    SetWindowPos(s_hInputWnd, HWND_TOPMOST, x, y, w, h,
-        SWP_NOACTIVATE | SWP_SHOWWINDOW);
-}
-
-void ChatUpdateButtonPosition()
-{
-    if (!s_hButtonWnd)
-        return;
-
-    int x = 0, y = 0, w = 0, h = 0;
-    GetButtonRect(x, y, w, h);
-    SetWindowPos(s_hButtonWnd, HWND_TOPMOST, x, y, w, h,
-        SWP_NOACTIVATE | SWP_SHOWWINDOW);
-}
-
-void ChatUpdateTalkPosition()
-{
-    if (!s_hTalkWnd)
-        return;
-
-    int w = 0, h = 0;
-    MeasureTalkText(kTalkMaxWidth, w, h);
-    PositionTalkWindow(w, h);
-}
-
-void ChatUpdateTaskListPosition()
-{
-    if (!s_hTaskWnd)
-        return;
-
-    const int width = GetInputWidth();
-    const int height = kTaskHeight;
-    PositionTaskWindow(width, height);
-}
-
-void ChatRecordInteraction()
-{
-    EnsureStateLoaded();
-    s_state.lastInteraction = GetUnixTimeSeconds();
-}
-
-ChatSystem& ChatSystem::Get()
-{
-    static ChatSystem instance;
-    return instance;
-}
-
-void ChatSystem::Init(HWND hwnd)
-{
-    ChatInit(hwnd);
-}
-
-void ChatSystem::ShowInput(HWND hwndParent)
-{
-    ChatShowInput(hwndParent);
-}
-
-void ChatSystem::ShowButtonInput(HWND hwndParent, const std::wstring& key1, const std::wstring& key2)
-{
-    ChatShowButtonInput(hwndParent, key1, key2);
-}
-
-void ChatSystem::UpdateInputPosition()
-{
-    ChatUpdateInputPosition();
-}
-
-void ChatSystem::UpdateTalkPosition()
-{
-    ChatUpdateTalkPosition();
-}
-
-void ChatSystem::UpdateButtonPosition()
-{
-    ChatUpdateButtonPosition();
-}
-
-void ChatSystem::UpdateTaskListPosition()
-{
-    ChatUpdateTaskListPosition();
-}
-
-void ChatSystem::RecordInteraction()
-{
-    ChatRecordInteraction();
-}
-
-void ChatSystem::TickIdleCheck(HWND hwnd)
-{
-    ChatTickIdleCheck(hwnd);
-}
-
-void ChatSystem::GetStateSnapshot(long long& lastInteraction, int& valence, int& arousal)
-{
-    ChatGetStateSnapshot(lastInteraction, valence, arousal);
-}
-
-void ChatSystem::HandleInput(HWND hwnd, const std::wstring& input)
-{
-    ChatHandleInput(hwnd, input);
-}
-
-void ChatTickIdleCheck(HWND hwnd)
-{
-    EnsureStateLoaded();
-
-    // 允许外部手动修改 valence / arousal 愉悦度/兴奋度
-    ChatState fileState = s_state;
-    if (TryLoadState(fileState))
-    {
-        s_state.valence = fileState.valence;
-        s_state.arousal = fileState.arousal;
-        s_state.lastInteraction = fileState.lastInteraction;
-    }
-
-    const long long now = GetUnixTimeSeconds();
-    UpdateMonitorState();
-    StateBeginUpdate();
-    switch (s_monitorState)
-    {
-    case 2: StateSet(L"activity", L"work"); break;
-    case 1: StateSet(L"activity", L"game"); break;
-    default: StateSet(L"activity", L"life"); break;
-    }
-    if (CheckGameKeywords(hwnd))
-    {
-        s_state.lastInteraction = now;
-        return;
-    }
-
-    const int valence = s_state.valence;
-    const int arousal = s_state.arousal;
-    int thresholdMinutes = (15 - arousal) * (15 - valence);
-    if (thresholdMinutes < 0)
-        thresholdMinutes = 0;
-    const long long thresholdSeconds = static_cast<long long>(thresholdMinutes) * 60;
-
-    if (now - s_state.lastInteraction < thresholdSeconds)
-        return;
-
-    const int hour = GetLocalHour();
-    StateSet(L"time", IsSleepHour(hour) ? L"night" : L"day");
-    StateEndUpdate();
-    const std::wstring overrideKey = GetIdleOverrideKeyForHour(hour);
-    if (!overrideKey.empty())
-    {
-        std::wstring text;
-        std::wstring keyUsed;
-        if (GetIdleTextByKey(overrideKey, text, keyUsed))
-        {
-            ChatTalk(hwnd, text.c_str());
-            PlayIdleSound(keyUsed);
-            TryAppendDiaryForKey(keyUsed);
-            s_state.lastInteraction = now;
-            return;
-        }
-    }
-
-    const bool sleepMode = (s_monitorState == 1 && IsSleepHour(hour));
-    IdleEntry idle;
-    if (sleepMode)
-    {
-        if (!GetRandomVariantLine(L"sleep", 5, idle))
-            return;
-    }
-    else
-    {
-        if (!GetRandomVariantLine(L"idle", 5, idle))
-            return;
-    }
-
-    ChatTalk(hwnd, idle.text.c_str());
-    PlayIdleSound(idle.key);
-    TryAppendDiaryForKey(idle.key);
-
-    if (sleepMode)
-    {
-        std::map<std::wstring, std::wstring> gameMap;
-        LoadKeywordMap(L"monitor_game.txt", gameMap);
-        if (!gameMap.empty() && !s_sleepPromptActive)
-        {
-            s_sleepPromptActive = true;
-            SleepPromptContext* ctx = new SleepPromptContext();
-            ctx->hwnd = hwnd;
-            ctx->gameMap = gameMap;
-            HANDLE hThread = CreateThread(nullptr, 0, SleepPromptThread, ctx, 0, nullptr);
-            if (hThread)
-                CloseHandle(hThread);
-            else
-            {
-                s_sleepPromptActive = false;
-                delete ctx;
-            }
-        }
-    }
-
-    // 避免每分钟重复触发：触发后视作“被动互动”刷新时间戳
-    s_state.lastInteraction = now;
-}
-
-void ChatGetStateSnapshot(long long& lastInteraction, int& valence, int& arousal)
-{
-    EnsureStateLoaded();
-    lastInteraction = s_state.lastInteraction;
-    valence = s_state.valence;
-    arousal = s_state.arousal;
-}
-
-void ChatInit(HWND hwnd)
-{
-    s_mainHwnd = hwnd;
-    DiarySetStateSnapshotProvider(ChatGetStateSnapshot);
-
-    StateBeginUpdate();
-    // 初始化维度，确保至少有一个条件订阅能立即生效。
-    StateSet(L"activity", L"life");
-    StateSet(L"time", L"day");
-    // 基础 Tick，确保在条件订阅未生效时也能更新状态。
-    StateRegisterProfile(
-        L"tick.base",
-        {},
-        { { L"tick.minute", [](const Event&) { if (s_mainHwnd) ChatTickIdleCheck(s_mainHwnd); } } }
-    );
-    StateEndUpdate();
-}
-
-// 显示按钮输入窗口
 void ChatShowButtonInput(HWND hwndParent, const std::wstring& key1, const std::wstring& key2)
 {
-    const int width = GetInputWidth();
-    const int height = kButtonHeight;
-
-    s_buttonKey1 = key1;
-    s_buttonKey2 = key2;
-
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = ButtonInputProc;
-    wc.hInstance = GetModuleHandle(NULL);
-    wc.lpszClassName = L"ChatButtonWnd";
-    static bool registered = false;
-    if (!registered)
-    {
-        RegisterClassW(&wc);
-        registered = true;
-    }
-
-    s_hButtonWnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-        wc.lpszClassName,
-        nullptr,
-        WS_POPUP,
-        0, 0,
-        width, height,
-        hwndParent,
-        nullptr,
-        GetModuleHandle(NULL),
-        nullptr
-    );
-
-    if (!s_hButtonWnd) return;
-    SetLayeredWindowAttributes(s_hButtonWnd, 0, 230, LWA_ALPHA);
-
-    const std::wstring label1 = GetButtonLabel(key1, key1);
-    const std::wstring label2 = GetButtonLabel(key2, key2);
-
-    const int btnW = width - 20 * 2;
-    const int btnH = 28;
-    HWND btn1 = CreateWindowW(L"BUTTON", label1.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        20, 10, btnW, btnH, s_hButtonWnd, (HMENU)1, GetModuleHandle(NULL), nullptr);
-    HWND btn2 = CreateWindowW(L"BUTTON", label2.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        20, 10 + btnH + 12, btnW, btnH, s_hButtonWnd, (HMENU)2, GetModuleHandle(NULL), nullptr);
-
-    if (s_inputFont)
-    {
-        SendMessageW(btn1, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
-        SendMessageW(btn2, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
-    }
-
-    ShowWindow(s_hButtonWnd, SW_SHOW);
-    ChatUpdateButtonPosition();
+    ChatPanels::ShowButtonInput(hwndParent, key1, key2);
 }
+
+
+
+
+
+

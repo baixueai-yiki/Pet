@@ -1,4 +1,4 @@
-#include "UIManager.h"
+﻿#include "UIManager.h"
 #include "UIComponents/CloseComponent.h"
 #include "UIComponents/ScrollComponent.h"
 #include "UIComponents/DragComponent.h"

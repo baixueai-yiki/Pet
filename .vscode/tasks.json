@@ -1,0 +1,35 @@
+﻿{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Pet",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                "${workspaceFolder}\\.vscode\\build.ps1",
+                "-SourceRoot",
+                "Source",
+                "-OutputExe",
+                "Distribution/alpha/Miss_qing/Pet.exe",
+                "-ObjectDir",
+                "Build/obj"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}"
+            }
+        }
+    ]
+}

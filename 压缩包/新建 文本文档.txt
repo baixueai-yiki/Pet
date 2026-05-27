@@ -1,0 +1,73 @@
+﻿Source/
+├─ Core/               # 工具层、基础设施
+│  ├─ TextFile.h/cpp       # 文本读取/写入、热更新
+│  ├─ Path.h/cpp           # 路径工具
+│  ├─ Timer.h/cpp          # 定时器工具
+│  └─ Utils/               # 其他小工具类（JSON解析、日志等）
+│
+├─ Runtime/            # 调度层/中枢/事件系统
+│  ├─ EventBus.h/cpp（负责模块间的消息发布与订阅）
+│  ├─ Scheduler.h/cpp（定时器/调度器）
+│  └─ StateManager.h/cpp（全局状态管理）
+│
+├─ Engine/             # 引擎层
+│  ├─ Window/              # 窗口管理、消息循环
+│  │  ├─ Window.h/cpp
+│  │  └─ InputRouter.h/cpp
+│  ├─ Render/              # 渲染逻辑
+│  └─ Input/               # 输入事件
+│     ├─ InputDispatcher.h/cpp
+│     └─ InputChat.h/cpp
+│
+├─ Systems/            # 系统层
+│  ├─ Pet/                 # 核心桌宠系统
+│  │  ├─ PetActor.h/cpp    # PetActor + 状态、生命周期
+│  │  └─ PetComponents/    # 桌宠组件
+│  │     ├─ ChatComponent.h/cpp（桌宠发言）
+│  │     ├─ AudioComponent.h/cpp（桌宠音频）
+│  │     └─ InputComponent.h/cpp（输入文字）
+│  │
+│  ├─ UI/                   
+│  │  ├─ UIActor.h/cpp     # UIActor 
+│  │  ├─ UIComponents/    # UI组件
+│  │  │  ├─ CloseComponent.h/cpp（关闭界面）
+│  │  │  ├─ ScrollComponent.h/cpp（滚轮滑动）
+│  │  │  ├─ DragComponent.h/cpp （拖动窗口）
+│  │  │  └─ InputComponent.h/cpp（输入文字）
+│  │  └─ UIPanels/         # UI界面
+│  │     ├─ ChatPanels.h/cpp（聊天UI）
+│  │     ├─ TaskPanels.h/cpp（任务UI）
+│  │     ├─ SettingPanels.h/cpp（设置UI）
+│  │     └─ OverlayPanels.h/cpp（浮层UI）
+│  │
+│  └─ Setting/             # 配置系统
+│     ├─ Setting.h/cpp
+│     └─ SettingWindowComponent.h/cpp
+│
+├─ Main/
+│  └─ main.cpp             # 启动入口
+
+
+
+
+
+
+
+备份：
+拖拽组件（DragComponent）
+可拖动窗口/面板，处理鼠标按下+移动事件
+
+焦点/选中组件（FocusComponent / SelectComponent）
+处理输入焦点、选中状态，高亮或者键盘操作
+
+动画/过渡组件（TweenComponent / AnimationComponent）
+面板显示、隐藏、弹出动画，或者 GIF/帧动画
+
+缩放/调整组件（ResizeComponent）
+可调整面板大小的逻辑
+
+提示/浮层组件（TooltipComponent / OverlayComponent）
+悬浮提示、气泡、徽章等独立显示层
+
+输入捕获组件（InputCaptureComponent）
+处理键盘/鼠标事件拦截，比如输入框或快捷键

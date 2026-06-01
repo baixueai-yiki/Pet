@@ -8,7 +8,11 @@ void WindowCore::ApplyStyle(HWND hwnd, const WindowStyle& style) {
     SetWindowLongPtrW(hwnd, GWL_STYLE, static_cast<LONG_PTR>(style.style));
     SetWindowLongPtrW(hwnd, GWL_EXSTYLE, static_cast<LONG_PTR>(style.exStyle));
 
-    SetAlpha(hwnd, style.alpha);
+    if (style.useColorKey) {
+        SetColorKey(hwnd, style.colorKey);
+    } else {
+        SetAlpha(hwnd, style.alpha);
+    }
     SetTopMost(hwnd, style.topMost);
     SetClickThrough(hwnd, style.clickThrough);
 
@@ -41,6 +45,16 @@ void WindowCore::SetAlpha(HWND hwnd, BYTE alpha) {
         SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
     }
     SetLayeredWindowAttributes(hwnd, 0, alpha, LWA_ALPHA);
+}
+
+void WindowCore::SetColorKey(HWND hwnd, COLORREF colorKey) {
+    if (!hwnd) return;
+    LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    if ((ex & WS_EX_LAYERED) == 0) {
+        ex |= WS_EX_LAYERED;
+        SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex);
+    }
+    SetLayeredWindowAttributes(hwnd, colorKey, 0, LWA_COLORKEY);
 }
 
 } // namespace pet::engine::window

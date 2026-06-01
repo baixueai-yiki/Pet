@@ -1,17 +1,24 @@
-﻿#pragma once
+#pragma once
 
 #include <windows.h>
+
+namespace pet::systems::pet::components {
+struct RenderState;
+}
 
 namespace pet::engine::render {
 
 class Renderer {
 public:
-    static void Begin(HDC hdc);
-    static void End(HDC hdc);
+    Renderer() = delete;
 
-    static void Clear(HDC hdc, COLORREF color, const RECT& rc);
-    static void DrawRect(HDC hdc, const RECT& rc, COLORREF color);
-    static void DrawTextLine(HDC hdc, int x, int y, const wchar_t* text, COLORREF color = RGB(255, 255, 255));
+    static bool Initialize();
+    static void Shutdown();
+    static void Render(HDC hdc, const pet::systems::pet::components::RenderState& state);
+    static bool HasImage();
+
+private:
+    static bool LoadImageFromCandidates();
 };
 
 } // namespace pet::engine::render

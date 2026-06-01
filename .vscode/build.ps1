@@ -33,15 +33,48 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 $objectPath = Join-Path $projectRoot $ObjectDir
 New-Item -ItemType Directory -Force -Path $objectPath | Out-Null
 
-$compileArgs = @(
-    "/std:c++17",
-    "/EHsc",
-    "/utf-8",
-    "/I", $sourcePath,
-    "/Fo$objectPath\\"
-) + $cppFiles + @(
-    "/Fe:$outputPath",
+function Get-ObjectFilePath {
+    param([string]$CppFile)
+    $relative = $CppFile.Substring($sourcePath.Length).TrimStart('\','/')
+    $safeName = ($relative -replace '[\\/:*?"<>|]', '_') -replace '\.cpp$', '.obj'
+    return Join-Path $objectPath $safeName
+}
+
+$objectFiles = @()
+Write-Host "Compiling $($cppFiles.Count) source files from '$SourceRoot'..."
+foreach ($cpp in $cppFiles) {
+    $obj = Get-ObjectFilePath -CppFile $cpp
+    $objDir = Split-Path -Parent $obj
+    New-Item -ItemType Directory -Force -Path $objDir | Out-Null
+
+    $compileArgs = @(
+        "/nologo",
+        "/std:c++17",
+        "/EHsc",
+        "/utf-8",
+        "/DUNICODE",
+        "/D_UNICODE",
+        "/I", $sourcePath,
+        "/c",
+        $cpp,
+        "/Fo$obj"
+    )
+
+    & cl @compileArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build failed compiling $cpp with exit code $LASTEXITCODE"
+    }
+
+    $objectFiles += $obj
+}
+
+$linkArgs = @(
+    "/nologo",
+    "/Fe:$outputPath"
+) + $objectFiles + @(
     "/link",
+    "/SUBSYSTEM:WINDOWS",
+    "/ENTRY:wmainCRTStartup",
     "user32.lib",
     "gdi32.lib",
     "gdiplus.lib",
@@ -50,8 +83,7 @@ $compileArgs = @(
     "imm32.lib"
 )
 
-Write-Host "Compiling $($cppFiles.Count) source files from '$SourceRoot'..."
-& cl @compileArgs
+& cl @linkArgs
 
 if ($LASTEXITCODE -ne 0) {
     throw "Build failed with exit code $LASTEXITCODE"

@@ -15,6 +15,8 @@ public:
 
     static void ChooseOption1();
     static void ChooseOption2();
+    static bool LoadConfig(const std::wstring& configPath);
+    static const std::wstring* GetResponse(const std::wstring& optionId);
 };
 
 } // namespace pet::systems::ui::panels::chat

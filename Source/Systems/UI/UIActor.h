@@ -41,6 +41,9 @@ private:
 
     bool initialized_ = false;
     bool visible_ = true;
+    bool dragging_ = false;
+    int dragOffsetX_ = 0;
+    int dragOffsetY_ = 0;
     int onInputChar_ = 0;
     int onMouseDown_ = 0;
     int onMouseMove_ = 0;

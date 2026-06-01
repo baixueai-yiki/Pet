@@ -1,7 +1,8 @@
-﻿#include "Systems/UI/UIActor.h"
+#include "Systems/UI/UIActor.h"
 
 #include "Engine/Input/Mouse.h"
 #include "Runtime/EventBus.h"
+#include "Systems/Pet/PetActor.h"
 
 namespace pet::systems::ui {
 
@@ -66,14 +67,22 @@ void UIActor::OnScroll(int delta) {
 
 void UIActor::OnDragBegin(int x, int y) {
     drag_.Begin(x, y);
+    const auto& petState = ::pet::systems::pet::PetActor::Get().GetRenderState();
+    dragOffsetX_ = x - petState.x;
+    dragOffsetY_ = y - petState.y;
+    dragging_ = true;
 }
 
 void UIActor::OnDragMove(int x, int y) {
     drag_.MoveTo(x, y);
+    if (dragging_) {
+        ::pet::systems::pet::PetActor::Get().SetPosition(x - dragOffsetX_, y - dragOffsetY_);
+    }
 }
 
 void UIActor::OnDragEnd() {
     drag_.End();
+    dragging_ = false;
 }
 
 void UIActor::SetInputText(const std::wstring& text) {

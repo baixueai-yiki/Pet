@@ -1,32 +1,37 @@
 ﻿#pragma once
-
-#include <cstdint>
 #include <string>
 
-namespace pet::runtime {
-
-struct DateTime {
-    int year = 0;
-    int month = 0;
-    int day = 0;
-    int hour = 0;
-    int minute = 0;
-    int second = 0;
+// 简单的本地时间快照（24小时制）。
+struct DateTime
+{
+    int year;
+    int month;
+    int day;
+    int hour;
+    int minute;
+    int second;
 };
 
-class Scheduler {
-public:
-    Scheduler() = delete;
+// 当前时间戳（秒）。
+long long GetUnixTimeSeconds();
 
-    static std::int64_t GetUnixTimeSeconds();
-    static int GetLocalHour();
-    static DateTime GetLocalDateTime();
-    static bool IsSleepHour(int hour);
+// 当前本地小时（0-23）。
+int GetLocalHour();
 
-    static int ScheduleEveryMs(const std::wstring& eventName, unsigned int intervalMs);
-    static void CancelSchedule(int id);
-    static void Tick();
-    static void Clear();
-};
+// 当前本地日期/时间快照。
+DateTime GetLocalDateTime();
 
-} // namespace pet::runtime
+// 判断是否处于睡眠时段（00:00 - 05:59）。
+bool IsSleepHour(int hour);
+
+// 按事件名注册周期性触发（毫秒）。
+int ScheduleEveryMs(const std::wstring& eventName, unsigned int intervalMs);
+
+// 取消一个调度任务。
+void CancelSchedule(int id);
+
+// 调度器更新（主循环或定时器里调用）。
+void SchedulerTick();
+
+// 清空所有调度任务。
+void SchedulerClear();

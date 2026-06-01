@@ -1,24 +1,9 @@
-#pragma once
-
+﻿#pragma once
 #include <windows.h>
 
-namespace pet::systems::pet::components {
-struct RenderState;
-}
-
-namespace pet::engine::render {
-
-class Renderer {
-public:
-    Renderer() = delete;
-
-    static bool Initialize();
-    static void Shutdown();
-    static void Render(HDC hdc, const pet::systems::pet::components::RenderState& state);
-    static bool HasImage();
-
-private:
-    static bool LoadImageFromCandidates();
-};
-
-} // namespace pet::engine::render
+// 初始化渲染器与资源（包括 GDI+ 和人物图像）
+bool RendererInit();
+// 确保退出时释放 GDI+ 资源并恢复状态
+void RendererShutdown();
+// 使用窗口 HDC 进行常规绘制
+void RendererRender(HDC hdc);

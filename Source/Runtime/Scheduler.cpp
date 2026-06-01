@@ -1,43 +1,31 @@
-﻿#include "Runtime/Scheduler.h"
-
-#include "Runtime/EventBus.h"
-
+﻿#include "Scheduler.h"
+#include "EventBus.h"
+#include <windows.h>
 #include <ctime>
 #include <vector>
-#include <windows.h>
 
-namespace pet::runtime {
-namespace {
-
-struct ScheduleEntry {
-    int id = 0;
-    std::wstring eventName;
-    unsigned int intervalMs = 0;
-    DWORD lastTick = 0;
-};
-
-std::vector<ScheduleEntry> g_entries;
-int g_nextScheduleId = 1;
-
-} // namespace
-
-std::int64_t Scheduler::GetUnixTimeSeconds() {
-    return static_cast<std::int64_t>(std::time(nullptr));
+// 获取当前 Unix 时间戳（秒）
+long long GetUnixTimeSeconds()
+{
+    return static_cast<long long>(time(nullptr));
 }
 
-int Scheduler::GetLocalHour() {
-    std::time_t now = std::time(nullptr);
-    std::tm localTime = {};
+// 获取当前本地小时
+int GetLocalHour()
+{
+    time_t now = time(nullptr);
+    struct tm localTime = {};
     localtime_s(&localTime, &now);
     return localTime.tm_hour;
 }
 
-DateTime Scheduler::GetLocalDateTime() {
-    std::time_t now = std::time(nullptr);
-    std::tm localTime = {};
+// 获取当前本地日期时间
+DateTime GetLocalDateTime()
+{
+    time_t now = time(nullptr);
+    struct tm localTime = {};
     localtime_s(&localTime, &now);
-
-    DateTime out;
+    DateTime out = {};
     out.year = localTime.tm_year + 1900;
     out.month = localTime.tm_mon + 1;
     out.day = localTime.tm_mday;
@@ -47,52 +35,74 @@ DateTime Scheduler::GetLocalDateTime() {
     return out;
 }
 
-bool Scheduler::IsSleepHour(int hour) {
+// 判断是否处于睡眠时段
+bool IsSleepHour(int hour)
+{
     return hour >= 0 && hour < 6;
 }
 
-int Scheduler::ScheduleEveryMs(const std::wstring& eventName, unsigned int intervalMs) {
-    if (intervalMs == 0) {
-        return 0;
-    }
+// 周期调度记录
+struct ScheduleEntry
+{
+    int id;
+    std::wstring eventName;
+    unsigned int intervalMs;
+    DWORD lastTick;
+};
 
-    const int id = g_nextScheduleId++;
+static std::vector<ScheduleEntry> s_entries;
+static int s_nextScheduleId = 1;
+
+// 注册周期性事件
+int ScheduleEveryMs(const std::wstring& eventName, unsigned int intervalMs)
+{
+    if (intervalMs == 0)
+        return 0;
+
+    const int id = s_nextScheduleId++;
     ScheduleEntry e;
     e.id = id;
     e.eventName = eventName;
     e.intervalMs = intervalMs;
     e.lastTick = GetTickCount();
-    g_entries.push_back(e);
+    s_entries.push_back(e);
     return id;
 }
 
-void Scheduler::CancelSchedule(int id) {
-    for (size_t i = 0; i < g_entries.size(); ++i) {
-        if (g_entries[i].id == id) {
-            g_entries.erase(g_entries.begin() + static_cast<long long>(i));
+// 取消一个调度任务
+void CancelSchedule(int id)
+{
+    for (size_t i = 0; i < s_entries.size(); ++i)
+    {
+        if (s_entries[i].id == id)
+        {
+            s_entries.erase(s_entries.begin() + static_cast<long long>(i));
             return;
         }
     }
 }
 
-void Scheduler::Tick() {
-    if (g_entries.empty()) {
+// 轮询调度器并触发到期事件
+void SchedulerTick()
+{
+    if (s_entries.empty())
         return;
-    }
 
     const DWORD now = GetTickCount();
-    for (auto& e : g_entries) {
+    for (auto& e : s_entries)
+    {
         const DWORD elapsed = now - e.lastTick;
-        if (elapsed >= e.intervalMs) {
+        if (elapsed >= e.intervalMs)
+        {
             e.lastTick = now;
-            EventBus::Emit(e.eventName);
+            EventEmit(e.eventName);
         }
     }
 }
 
-void Scheduler::Clear() {
-    g_entries.clear();
-    g_nextScheduleId = 1;
+// 清空所有调度任务
+void SchedulerClear()
+{
+    s_entries.clear();
+    s_nextScheduleId = 1;
 }
-
-} // namespace pet::runtime

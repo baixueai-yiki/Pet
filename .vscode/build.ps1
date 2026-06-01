@@ -74,7 +74,7 @@ $linkArgs = @(
 ) + $objectFiles + @(
     "/link",
     "/SUBSYSTEM:WINDOWS",
-    "/ENTRY:wmainCRTStartup",
+    "/ENTRY:wWinMainCRTStartup",
     "user32.lib",
     "gdi32.lib",
     "gdiplus.lib",

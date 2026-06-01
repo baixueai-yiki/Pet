@@ -1,28 +1,7 @@
 ﻿#pragma once
+#include <windows.h>
 
-#include "Engine/Window/WindowCore.h"
-
-#include <string>
-
-namespace pet::engine::window {
-
-struct WindowDesc {
-    std::wstring className = L"PetMainWindow";
-    std::wstring title = L"Pet";
-    int x = 0;
-    int y = 0;
-    int width = GetSystemMetrics(SM_CXSCREEN);
-    int height = GetSystemMetrics(SM_CYSCREEN);
-    WindowStyle style;
-};
-
-class WindowLifecycle {
-public:
-    static bool RegisterWindowClass(const std::wstring& className, WNDPROC wndProc, HINSTANCE instance = GetModuleHandleW(nullptr));
-    static HWND Create(const WindowDesc& desc, WNDPROC wndProc, HINSTANCE instance = GetModuleHandleW(nullptr));
-    static void Show(HWND hwnd);
-    static void Destroy(HWND hwnd);
-    static LRESULT HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
-};
-
-} // namespace pet::engine::window
+// 主窗口的消息回调，负责将系统输入/绘制事件继续分发
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+// 创建透明顶层窗口供宠物渲染和交互使用
+HWND CreateMainWindow(HINSTANCE hInstance);

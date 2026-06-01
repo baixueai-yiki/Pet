@@ -1,59 +1,52 @@
 ﻿#pragma once
 
-#include "Systems/UI/Components/CloseComponent.h"
-#include "Systems/UI/Components/DragComponent.h"
-#include "Systems/UI/Components/InputComponent.h"
-#include "Systems/UI/Components/ScrollComponent.h"
-
+#include <windows.h>
+#include <memory>
 #include <string>
+#include <vector>
 
-namespace pet::systems::ui {
+class UIComponent;
 
-class UIActor {
+class UIActor
+{
 public:
-    static UIActor& Get();
+    UIActor(const std::wstring& name);
+    ~UIActor();
 
-    void Initialize();
+    void Initialize(HWND parentHwnd);
     void Shutdown();
-    void Update();
+
+    void AddComponent(std::unique_ptr<UIComponent> component);
+
+    HWND GetParent() const { return m_parentHwnd; }
+    const std::wstring& GetName() const { return m_name; }
 
     void Show();
     void Hide();
-    bool IsVisible() const;
+    bool IsVisible() const { return m_visible; }
 
-    void OnCloseRequested();
-    void OnScroll(int delta);
-    void OnDragBegin(int x, int y);
-    void OnDragMove(int x, int y);
-    void OnDragEnd();
+    void NotifyMouseClick(int x, int y);
+    void NotifyMouseWheel(int delta);
 
-    void SetInputText(const std::wstring& text);
-    void SubmitInput();
-
-    int GetScrollOffset() const;
-    const components::DragState& GetDragState() const;
-    const std::wstring& GetInputText() const;
+    // 静态单例方法（组合根：初始化组件和面板）
+    static void InitializeSingleton(HWND parent);
+    static void ShutdownSingleton();
+    static UIActor& GetInstance();
 
 private:
-    UIActor() = default;
-    void RegisterRuntimeEvents();
-    void UnregisterRuntimeEvents();
-
-    bool initialized_ = false;
-    bool visible_ = true;
-    bool dragging_ = false;
-    int dragOffsetX_ = 0;
-    int dragOffsetY_ = 0;
-    int onInputChar_ = 0;
-    int onMouseDown_ = 0;
-    int onMouseMove_ = 0;
-    int onMouseUp_ = 0;
-    int onMouseWheel_ = 0;
-
-    components::CloseComponent close_;
-    components::ScrollComponent scroll_;
-    components::DragComponent drag_;
-    components::InputComponent input_;
+    std::wstring m_name;
+    HWND m_parentHwnd = nullptr;
+    bool m_visible = false;
+    std::vector<std::unique_ptr<UIComponent>> m_components;
+    static std::unique_ptr<UIActor> s_instance;
 };
 
-} // namespace pet::systems::ui
+class UIComponent
+{
+public:
+    virtual ~UIComponent() = default;
+    virtual void OnInit(UIActor& actor) {}
+    virtual void OnShutdown(UIActor& actor) {}
+    virtual void OnMouseClick(UIActor& actor, int x, int y) {}
+    virtual void OnMouseWheel(UIActor& actor, int delta) {}
+};

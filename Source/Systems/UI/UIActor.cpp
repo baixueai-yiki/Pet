@@ -1,174 +1,103 @@
-#include "Systems/UI/UIActor.h"
+﻿#include "UIActor.h"
+#include "UIComponents/CloseComponent.h"
+#include "UIComponents/ScrollComponent.h"
+#include "UIComponents/DragComponent.h"
+#include "UIComponents/InputComponent.h"
+#include "UIPanels/ChatPanel/ChatPanelInternal.h"
+#include "UIPanels/ToolPanel/TaskToolPanel.h"
+#include <memory>
 
-#include "Engine/Input/Mouse.h"
-#include "Runtime/EventBus.h"
-#include "Systems/Pet/PetActor.h"
-
-namespace pet::systems::ui {
-
-UIActor& UIActor::Get() {
-    static UIActor instance;
-    return instance;
+UIActor::UIActor(const std::wstring& name)
+    : m_name(name)
+{
 }
 
-void UIActor::Initialize() {
-    if (initialized_) {
+UIActor::~UIActor()
+{
+    Shutdown();
+}
+
+void UIActor::Initialize(HWND parentHwnd)
+{
+    if (m_parentHwnd == parentHwnd)
         return;
-    }
 
-    RegisterRuntimeEvents();
-    visible_ = true;
-    initialized_ = true;
-    runtime::EventBus::Emit(L"ui.actor.initialized");
+    m_parentHwnd = parentHwnd;
+    for (auto& component : m_components)
+        component->OnInit(*this);
 }
 
-void UIActor::Shutdown() {
-    if (!initialized_) {
+void UIActor::Shutdown()
+{
+    for (auto& component : m_components)
+        component->OnShutdown(*this);
+    m_components.clear();
+}
+
+void UIActor::AddComponent(std::unique_ptr<UIComponent> component)
+{
+    if (component)
+        m_components.push_back(std::move(component));
+}
+
+void UIActor::Show()
+{
+    m_visible = true;
+}
+
+void UIActor::Hide()
+{
+    m_visible = false;
+}
+
+void UIActor::NotifyMouseClick(int x, int y)
+{
+    if (!m_visible)
         return;
-    }
-
-    UnregisterRuntimeEvents();
-    runtime::EventBus::Emit(L"ui.actor.shutdown");
-    initialized_ = false;
+    for (auto& component : m_components)
+        component->OnMouseClick(*this, x, y);
 }
 
-void UIActor::Update() {
-    if (!initialized_) {
+void UIActor::NotifyMouseWheel(int delta)
+{
+    if (!m_visible)
         return;
-    }
-
-    if (close_.IsRequested()) {
-        visible_ = false;
-        close_.Reset();
-    }
+    for (auto& component : m_components)
+        component->OnMouseWheel(*this, delta);
 }
 
-void UIActor::Show() {
-    visible_ = true;
-    runtime::EventBus::Emit(L"ui.actor.show");
+// 静态单例方法（从 UIManager 迁移）
+std::unique_ptr<UIActor> UIActor::s_instance;
+
+void UIActor::InitializeSingleton(HWND parent)
+{
+    if (!s_instance)
+        s_instance = std::make_unique<UIActor>(L"MainUI");
+
+    s_instance->AddComponent(std::make_unique<CloseComponent>());
+    s_instance->AddComponent(std::make_unique<ScrollComponent>());
+    s_instance->AddComponent(std::make_unique<DragComponent>());
+    s_instance->AddComponent(std::make_unique<InputComponent>());
+    s_instance->Initialize(parent);
+    s_instance->Show();
+
+    EnsureFonts();
+    TaskToolPanel::Setup(*s_instance);
 }
 
-void UIActor::Hide() {
-    visible_ = false;
-    runtime::EventBus::Emit(L"ui.actor.hide");
-}
-
-bool UIActor::IsVisible() const {
-    return visible_;
-}
-
-void UIActor::OnCloseRequested() {
-    close_.RequestCloseAll();
-}
-
-void UIActor::OnScroll(int delta) {
-    scroll_.AddDelta(delta);
-}
-
-void UIActor::OnDragBegin(int x, int y) {
-    drag_.Begin(x, y);
-    const auto& petState = ::pet::systems::pet::PetActor::Get().GetRenderState();
-    dragOffsetX_ = x - petState.x;
-    dragOffsetY_ = y - petState.y;
-    dragging_ = true;
-}
-
-void UIActor::OnDragMove(int x, int y) {
-    drag_.MoveTo(x, y);
-    if (dragging_) {
-        ::pet::systems::pet::PetActor::Get().SetPosition(x - dragOffsetX_, y - dragOffsetY_);
+void UIActor::ShutdownSingleton()
+{
+    if (s_instance)
+    {
+        s_instance->Shutdown();
+        s_instance.reset();
     }
 }
 
-void UIActor::OnDragEnd() {
-    drag_.End();
-    dragging_ = false;
+UIActor& UIActor::GetInstance()
+{
+    if (!s_instance)
+        s_instance = std::make_unique<UIActor>(L"MainUI");
+    return *s_instance;
 }
 
-void UIActor::SetInputText(const std::wstring& text) {
-    input_.SetText(text);
-}
-
-void UIActor::SubmitInput() {
-    input_.Submit();
-}
-
-int UIActor::GetScrollOffset() const {
-    return scroll_.GetOffset();
-}
-
-const components::DragState& UIActor::GetDragState() const {
-    return drag_.GetState();
-}
-
-const std::wstring& UIActor::GetInputText() const {
-    return input_.GetText();
-}
-
-void UIActor::RegisterRuntimeEvents() {
-    if (onInputChar_ == 0) {
-        onInputChar_ = runtime::EventBus::Subscribe(L"engine.input.char", [&](const runtime::Event& evt) {
-            if (evt.payload.empty()) {
-                return;
-            }
-            const wchar_t ch = evt.payload.front();
-            if (ch == L'\r' || ch == L'\n') {
-                SubmitInput();
-                return;
-            }
-            SetInputText(GetInputText() + std::wstring(1, ch));
-        });
-    }
-
-    if (onMouseDown_ == 0) {
-        onMouseDown_ = runtime::EventBus::Subscribe(L"engine.input.mouse.left.down", [&](const runtime::Event&) {
-            const auto m = engine::input::Mouse::GetState();
-            OnDragBegin(m.x, m.y);
-        });
-    }
-
-    if (onMouseMove_ == 0) {
-        onMouseMove_ = runtime::EventBus::Subscribe(L"engine.input.mouse.move", [&](const runtime::Event&) {
-            const auto m = engine::input::Mouse::GetState();
-            OnDragMove(m.x, m.y);
-        });
-    }
-
-    if (onMouseUp_ == 0) {
-        onMouseUp_ = runtime::EventBus::Subscribe(L"engine.input.mouse.left.up", [&](const runtime::Event&) {
-            OnDragEnd();
-        });
-    }
-
-    if (onMouseWheel_ == 0) {
-        onMouseWheel_ = runtime::EventBus::Subscribe(L"engine.input.mouse.wheel", [&](const runtime::Event&) {
-            const auto m = engine::input::Mouse::GetState();
-            OnScroll(m.wheelDelta);
-        });
-    }
-}
-
-void UIActor::UnregisterRuntimeEvents() {
-    if (onInputChar_ != 0) {
-        runtime::EventBus::Unsubscribe(L"engine.input.char", onInputChar_);
-        onInputChar_ = 0;
-    }
-    if (onMouseDown_ != 0) {
-        runtime::EventBus::Unsubscribe(L"engine.input.mouse.left.down", onMouseDown_);
-        onMouseDown_ = 0;
-    }
-    if (onMouseMove_ != 0) {
-        runtime::EventBus::Unsubscribe(L"engine.input.mouse.move", onMouseMove_);
-        onMouseMove_ = 0;
-    }
-    if (onMouseUp_ != 0) {
-        runtime::EventBus::Unsubscribe(L"engine.input.mouse.left.up", onMouseUp_);
-        onMouseUp_ = 0;
-    }
-    if (onMouseWheel_ != 0) {
-        runtime::EventBus::Unsubscribe(L"engine.input.mouse.wheel", onMouseWheel_);
-        onMouseWheel_ = 0;
-    }
-}
-
-} // namespace pet::systems::ui

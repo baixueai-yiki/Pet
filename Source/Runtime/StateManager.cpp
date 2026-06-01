@@ -1,12 +1,10 @@
-﻿#include "Runtime/StateManager.h"
-
+﻿#include "StateManager.h"
+#include "EventBus.h"
 #include <unordered_map>
-#include <utility>
 
-namespace pet::runtime {
-namespace {
-
-struct Profile {
+// 条件订阅配置
+struct Profile
+{
     std::wstring id;
     std::vector<StateCondition> conditions;
     std::vector<SubscriptionSpec> subscriptions;
@@ -14,74 +12,83 @@ struct Profile {
     bool active = false;
 };
 
-std::unordered_map<std::wstring, std::wstring> g_state;
-std::vector<Profile> g_profiles;
-int g_updateDepth = 0;
+static std::unordered_map<std::wstring, std::wstring> s_state;
+static std::vector<Profile> s_profiles;
+static int s_updateDepth = 0;
 
-bool Matches(const Profile& p) {
-    for (const auto& cond : p.conditions) {
-        auto it = g_state.find(cond.dimension);
-        if (it == g_state.end() || it->second != cond.value) {
+// 判断当前状态是否满足某个配置
+static bool Matches(const Profile& p)
+{
+    for (const auto& cond : p.conditions)
+    {
+        auto it = s_state.find(cond.dimension);
+        if (it == s_state.end() || it->second != cond.value)
             return false;
-        }
     }
     return true;
 }
 
-void Activate(Profile& p) {
-    if (p.active) {
+// 激活配置：注册其所有事件订阅
+static void Activate(Profile& p)
+{
+    if (p.active)
         return;
-    }
 
     p.subIds.clear();
     p.subIds.reserve(p.subscriptions.size());
-    for (const auto& sub : p.subscriptions) {
-        const int id = EventBus::Subscribe(sub.eventName, sub.handler);
+    for (const auto& sub : p.subscriptions)
+    {
+        int id = EventSubscribe(sub.eventName, sub.handler);
         p.subIds.push_back(id);
     }
     p.active = true;
 }
 
-void Deactivate(Profile& p) {
-    if (!p.active) {
+// 失活配置：取消其所有事件订阅
+static void Deactivate(Profile& p)
+{
+    if (!p.active)
         return;
-    }
 
-    for (size_t i = 0; i < p.subscriptions.size() && i < p.subIds.size(); ++i) {
-        EventBus::Unsubscribe(p.subscriptions[i].eventName, p.subIds[i]);
-    }
+    for (size_t i = 0; i < p.subscriptions.size() && i < p.subIds.size(); ++i)
+        EventUnsubscribe(p.subscriptions[i].eventName, p.subIds[i]);
 
     p.subIds.clear();
     p.active = false;
 }
 
-} // namespace
-
-void StateManager::Set(const std::wstring& dimension, const std::wstring& value) {
-    g_state[dimension] = value;
-    if (g_updateDepth == 0) {
-        Refresh();
-    }
+// 设置某个状态维度的值
+void StateSet(const std::wstring& dimension, const std::wstring& value)
+{
+    s_state[dimension] = value;
+    if (s_updateDepth == 0)
+        StateRefresh();
 }
 
-std::wstring StateManager::Get(const std::wstring& dimension) {
-    const auto it = g_state.find(dimension);
-    return (it == g_state.end()) ? L"" : it->second;
+// 获取某个状态维度的值
+std::wstring StateGet(const std::wstring& dimension)
+{
+    auto it = s_state.find(dimension);
+    return (it == s_state.end()) ? L"" : it->second;
 }
 
-void StateManager::RegisterProfile(const std::wstring& id,
-                                   const std::vector<StateCondition>& conditions,
-                                   const std::vector<SubscriptionSpec>& subscriptions) {
-    for (auto& p : g_profiles) {
-        if (p.id == id) {
+// 注册条件订阅配置（满足条件时激活订阅）
+void StateRegisterProfile(const std::wstring& id,
+                          const std::vector<StateCondition>& conditions,
+                          const std::vector<SubscriptionSpec>& subscriptions)
+{
+    // 如果已存在同名配置，则替换
+    for (auto& p : s_profiles)
+    {
+        if (p.id == id)
+        {
             Deactivate(p);
             p.conditions = conditions;
             p.subscriptions = subscriptions;
             p.subIds.clear();
             p.active = false;
-            if (g_updateDepth == 0) {
-                Refresh();
-            }
+            if (s_updateDepth == 0)
+                StateRefresh();
             return;
         }
     }
@@ -90,51 +97,57 @@ void StateManager::RegisterProfile(const std::wstring& id,
     p.id = id;
     p.conditions = conditions;
     p.subscriptions = subscriptions;
-    g_profiles.push_back(std::move(p));
-
-    if (g_updateDepth == 0) {
-        Refresh();
-    }
+    s_profiles.push_back(std::move(p));
+    if (s_updateDepth == 0)
+        StateRefresh();
 }
 
-void StateManager::UnregisterProfile(const std::wstring& id) {
-    for (size_t i = 0; i < g_profiles.size(); ++i) {
-        if (g_profiles[i].id == id) {
-            Deactivate(g_profiles[i]);
-            g_profiles.erase(g_profiles.begin() + static_cast<long long>(i));
+// 移除指定配置
+void StateUnregisterProfile(const std::wstring& id)
+{
+    for (size_t i = 0; i < s_profiles.size(); ++i)
+    {
+        if (s_profiles[i].id == id)
+        {
+            Deactivate(s_profiles[i]);
+            s_profiles.erase(s_profiles.begin() + static_cast<long long>(i));
             return;
         }
     }
 }
 
-void StateManager::ClearProfiles() {
-    for (auto& p : g_profiles) {
+// 清空全部配置
+void StateClearProfiles()
+{
+    for (auto& p : s_profiles)
         Deactivate(p);
-    }
-    g_profiles.clear();
+    s_profiles.clear();
 }
 
-void StateManager::Refresh() {
-    for (auto& p : g_profiles) {
-        if (Matches(p)) {
+// 重新评估所有配置并按需激活/失活
+void StateRefresh()
+{
+    for (auto& p : s_profiles)
+    {
+        const bool shouldActive = Matches(p);
+        if (shouldActive)
             Activate(p);
-        } else {
+        else
             Deactivate(p);
-        }
     }
 }
 
-void StateManager::BeginUpdate() {
-    ++g_updateDepth;
+// 开始批量更新
+void StateBeginUpdate()
+{
+    ++s_updateDepth;
 }
 
-void StateManager::EndUpdate() {
-    if (g_updateDepth > 0) {
-        --g_updateDepth;
-    }
-    if (g_updateDepth == 0) {
-        Refresh();
-    }
+// 结束批量更新并触发刷新
+void StateEndUpdate()
+{
+    if (s_updateDepth > 0)
+        --s_updateDepth;
+    if (s_updateDepth == 0)
+        StateRefresh();
 }
-
-} // namespace pet::runtime

@@ -1,69 +1,44 @@
-#include "Core/Logger.h"
-#include "Core/Timer.h"
-#include "Engine/Input/InputDispatcher.h"
-#include "Engine/Input/Mouse.h"
-#include "Engine/Render/Renderer.h"
-#include "Engine/Window/WindowEvents.h"
+﻿#include <windows.h>
 #include "Engine/Window/WindowLifecycle.h"
-#include "Runtime/Scheduler.h"
-#include "Runtime/StateManager.h"
+#include "Engine/Render/Renderer.h"
 #include "Systems/Pet/PetActor.h"
-#include "Systems/UI/UIActor.h"
 
-#include <thread>
+static HWND g_hwnd = nullptr;
 
-int wmain() {
-    using namespace pet;
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
+{
+    // 初始化宠物的状态数据，确保后续渲染与交互依赖的数据有效
+    PetInit();
+    
 
-    runtime::StateManager::BeginUpdate();
-    runtime::StateManager::Set(L"app.mode", L"normal");
-    runtime::StateManager::Set(L"pet.state", L"idle");
-    runtime::StateManager::EndUpdate();
-
-    engine::window::WindowDesc windowDesc;
-    windowDesc.className = L"PetMainWindow";
-    windowDesc.title = L"Pet";
-    windowDesc.width = GetSystemMetrics(SM_CXSCREEN);
-    windowDesc.height = GetSystemMetrics(SM_CYSCREEN);
-    windowDesc.style.topMost = true;
-    windowDesc.style.clickThrough = false;
-    windowDesc.style.useColorKey = true;
-    windowDesc.style.colorKey = RGB(0, 0, 0);
-
-    if (!engine::render::Renderer::Initialize()) {
-        core::Logger::Error(L"Failed to initialize renderer.");
-        return 1;
+    // 启动渲染器并加载资源；失败时给出提示并退出
+    if (!RendererInit())
+    {
+        MessageBoxW(nullptr, L"Failed to load assets\\images\\qing.png.", L"Pet", MB_OK | MB_ICONERROR);
+        return -1;
     }
 
-    HWND hwnd = engine::window::WindowLifecycle::Create(windowDesc, engine::window::WindowLifecycle::HandleMessage);
-    if (!hwnd) {
-        core::Logger::Error(L"Failed to create main window.");
-        engine::render::Renderer::Shutdown();
-        return 1;
+    // 创建透明的主窗口，作为宠物和输入消息的承载体
+    g_hwnd = CreateMainWindow(hInstance);
+    if (!g_hwnd)
+    {
+        RendererShutdown();
+        return -1;
     }
 
-    engine::window::WindowLifecycle::Show(hwnd);
+    ShowWindow(g_hwnd, SW_SHOW);
+    UpdateWindow(g_hwnd);
 
-    systems::pet::PetActor::Get().Initialize();
-    systems::ui::UIActor::Get().Initialize();
-
-    core::Logger::Info(L"Pet runtime started.");
-
-    while (engine::window::WindowEvents::Poll()) {
-        runtime::Scheduler::Tick();
-        systems::pet::PetActor::Get().Update();
-        systems::ui::UIActor::Get().Update();
-
-        engine::input::Mouse::ClearFrameDelta();
-        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    // 进入消息循环，持续处理系统分发的事件（鼠标、窗口等）
+    MSG msg = {};
+    while (GetMessage(&msg, nullptr, 0, 0))
+    {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
     }
 
-    systems::ui::UIActor::Get().Shutdown();
-    systems::pet::PetActor::Get().Shutdown();
-    engine::render::Renderer::Shutdown();
-    runtime::StateManager::ClearProfiles();
-    runtime::Scheduler::Clear();
-
-    core::Logger::Info(L"Pet runtime stopped.");
+    // 退出前释放渲染器占用的资源
+    RendererShutdown();
     return 0;
 }
+

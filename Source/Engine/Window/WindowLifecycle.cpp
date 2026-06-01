@@ -1,109 +1,117 @@
-#include "Engine/Window/WindowLifecycle.h"
-
-#include "Engine/Input/InputDispatcher.h"
-#include "Engine/Render/Renderer.h"
-#include "Systems/Pet/PetActor.h"
-
+﻿#include <windows.h>
 #include <windowsx.h>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <cwctype>
+#include <vector>
+#include "../Input/InputDispatcher.h"
+#include "../Render/Renderer.h"
+#include "WindowLifecycle.h"
+#include "../../Core/Path.h"
+#include "../../Core/TextFile.h"
+#include "../../Systems/UI/UIPanels/ToolPanel/SettingToolPanel.h"
+#include "../../Runtime/Scheduler.h"
+#include "../../Systems/Pet/PetActor.h"
+#include "../../Systems/Pet/PetComponents/ChatComponent.h"
 
-namespace pet::engine::window {
+static const UINT_PTR kIdleCheckTimer = 2;
+static const UINT kIdleCheckMs = 60000;
 
-bool WindowLifecycle::RegisterWindowClass(const std::wstring& className, WNDPROC wndProc, HINSTANCE instance) {
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = wndProc;
-    wc.hInstance = instance;
-    wc.lpszClassName = className.c_str();
-    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
-
-    const ATOM atom = RegisterClassW(&wc);
-    return atom != 0 || GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+static std::wstring Trim(const std::wstring& s)
+{
+    size_t b = 0;
+    while (b < s.size() && iswspace(s[b]))
+        ++b;
+    size_t e = s.size();
+    while (e > b && iswspace(s[e - 1]))
+        --e;
+    return s.substr(b, e - b);
+}
+static UINT GetRefreshIntervalMs()
+{
+    int fps = Setting::GetInt(L"fps", 60);
+    if (fps != 30 && fps != 60 && fps != 120)
+        fps = 60;
+    return static_cast<UINT>(1000 / fps);
 }
 
-HWND WindowLifecycle::Create(const WindowDesc& desc, WNDPROC wndProc, HINSTANCE instance) {
-    if (!RegisterWindowClass(desc.className, wndProc, instance)) {
-        return nullptr;
-    }
+LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    static bool s_exitHandled = false;
+    switch (msg)
+    {
+    case WM_CREATE:
+        // 使用定时器让拖动时的重绘更顺滑
+        SetTimer(hwnd, 1, GetRefreshIntervalMs(), nullptr);
+        SetTimer(hwnd, kIdleCheckTimer, kIdleCheckMs, nullptr);
+        PetInitSystems(hwnd, kIdleCheckMs);
+        break;
 
-    const int width = desc.width > 0 ? desc.width : GetSystemMetrics(SM_CXSCREEN);
-    const int height = desc.height > 0 ? desc.height : GetSystemMetrics(SM_CYSCREEN);
-    const int x = desc.x;
-    const int y = desc.y;
 
-    HWND hwnd = CreateWindowExW(
-        desc.style.exStyle,
-        desc.className.c_str(),
-        desc.title.c_str(),
-        desc.style.style,
-        x,
-        y,
-        width,
-        height,
-        nullptr,
-        nullptr,
-        instance,
-        nullptr
-    );
-
-    if (hwnd) {
-        WindowCore::ApplyStyle(hwnd, desc.style);
-    }
-    return hwnd;
-}
-
-void WindowLifecycle::Show(HWND hwnd) {
-    if (!hwnd) return;
-    ShowWindow(hwnd, SW_SHOW);
-    UpdateWindow(hwnd);
-}
-
-void WindowLifecycle::Destroy(HWND hwnd) {
-    if (!hwnd) return;
-    DestroyWindow(hwnd);
-}
-
-LRESULT WindowLifecycle::HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    using namespace pet;
-
-    if (msg == WM_NCHITTEST) {
-        const POINT pt = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
-        RECT rc = {};
-        GetWindowRect(hwnd, &rc);
-
-        const auto& state = systems::pet::PetActor::Get().GetRenderState();
-        const RECT petRc = {
-            state.x,
-            state.y,
-            state.x + state.width,
-            state.y + state.height
-        };
-
-        if (PtInRect(&rc, pt) && !PtInRect(&petRc, pt)) {
-            return HTTRANSPARENT;
+    case WM_NCHITTEST:
+    {
+        int x = GET_X_LPARAM(lParam);
+        int y = GET_Y_LPARAM(lParam);
+        // 如果设置面板在显示，允许对话区域接收事件
+        if (Setting::IsPointInsideOverlay(x, y))
+            return HTCLIENT;
+        if (x >= g_pet.x && x <= g_pet.x + g_pet.w &&
+            y >= g_pet.y && y <= g_pet.y + g_pet.h)
+        {
+            return HTCLIENT;
         }
-        return HTCLIENT;
+        return HTTRANSPARENT;
     }
 
-    if (engine::input::InputDispatcher::Dispatch(msg, wParam, lParam)) {
-        return 0;
-    }
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_LBUTTONDBLCLK:
+    case WM_RBUTTONDOWN:
+        if (Setting::IsOverlayVisible() && Setting::HandleOverlayMouse(hwnd, msg, wParam, lParam))
+            break;
+        HandleInput(hwnd, msg, wParam, lParam);
+        break;
+    case WM_MOUSEWHEEL:
+        if (Setting::IsOverlayVisible() && Setting::HandleOverlayMouse(hwnd, msg, wParam, lParam))
+            break;
+        break;
+    case WM_TIMER:
+        // 拖动时按稳定频率重绘
+        if (wParam == kIdleCheckTimer)
+        {
+            SchedulerTick();
+        }
+        else
+        {
+            if (g_pet.isDragging)
+                InvalidateRect(hwnd, nullptr, FALSE);
+            Setting::TickTaskRefresh(hwnd);
+        }
+        break;
 
-    switch (msg) {
-    case WM_PAINT: {
-        PAINTSTRUCT ps = {};
+
+    case WM_PAINT:
+    {
+        // 进入/退出绘制流程，确保绘制消息被正确消费
+        PAINTSTRUCT ps;
         BeginPaint(hwnd, &ps);
 
-        RECT rc = {};
+        // 使用双缓冲减少拖动时闪烁
+        RECT rc;
         GetClientRect(hwnd, &rc);
-        const int w = rc.right - rc.left;
-        const int h = rc.bottom - rc.top;
+        int w = rc.right - rc.left;
+        int h = rc.bottom - rc.top;
 
         HDC memDC = CreateCompatibleDC(ps.hdc);
         HBITMAP memBmp = CreateCompatibleBitmap(ps.hdc, w, h);
-        HBITMAP oldBmp = static_cast<HBITMAP>(SelectObject(memDC, memBmp));
+        HBITMAP oldBmp = (HBITMAP)SelectObject(memDC, memBmp);
 
-        HBRUSH black = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+        // 先清成黑色（与颜色键一致），再绘制宠物
+        HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
         FillRect(memDC, &rc, black);
-        engine::render::Renderer::Render(memDC, systems::pet::PetActor::Get().GetRenderState());
+        RendererRender(memDC);
 
         BitBlt(ps.hdc, 0, 0, w, h, memDC, 0, 0, SRCCOPY);
 
@@ -111,16 +119,80 @@ LRESULT WindowLifecycle::HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARA
         DeleteObject(memBmp);
         DeleteDC(memDC);
         EndPaint(hwnd, &ps);
-        return 0;
+        break;
     }
+
     case WM_ERASEBKGND:
         return 1;
+
     case WM_DESTROY:
+        if (!s_exitHandled)
+        {
+            s_exitHandled = true;
+            PetOnExit();
+        }
         PostQuitMessage(0);
         return 0;
+
+    case WM_QUERYENDSESSION:
+        if (!s_exitHandled)
+        {
+            s_exitHandled = true;
+            PetOnExit();
+        }
+        return TRUE;
+
+    case WM_ENDSESSION:
+        if (wParam && !s_exitHandled)
+        {
+            s_exitHandled = true;
+            PetOnExit();
+        }
+        return 0;
+
+    case WM_USER + 1:
+        ChatShowInput(hwnd);
+        return 0;
+
     default:
-        return DefWindowProcW(hwnd, msg, wParam, lParam);
+        return DefWindowProc(hwnd, msg, wParam, lParam);
     }
+
+    return 0;
 }
 
-} // namespace pet::engine::window
+HWND CreateMainWindow(HINSTANCE hInstance)
+{
+    WNDCLASSW wc = {};
+    wc.style = CS_DBLCLKS;
+    wc.lpfnWndProc = WindowProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = L"PetWindow";
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(NULL_BRUSH));
+
+    ATOM atom = RegisterClassW(&wc);
+    if (atom == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
+        return nullptr;
+
+    HWND hwnd = CreateWindowExW(
+        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        wc.lpszClassName,
+        L"Pet",
+        WS_POPUP,
+        0, 0,
+        GetSystemMetrics(SM_CXSCREEN),
+        GetSystemMetrics(SM_CYSCREEN),
+        nullptr,
+        nullptr,
+        hInstance,
+        nullptr
+    );
+
+    if (hwnd)
+        SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
+
+    return hwnd;
+}
+
+

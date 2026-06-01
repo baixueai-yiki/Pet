@@ -128,7 +128,7 @@ Source/
 ### 2.5.1.PetActor
 │  ├─ Pet/ # 桌宠系统
 │  │   ├─ PetActor.h/cpp # 桌宠核心对象（状态机+组件管理）
-│  │   └─ Components/ # 桌宠功能组件
+│  │   └─ PetComponents/ # 桌宠功能组件
 │  │       ├─ AudioComponent.h/cpp # 音频逻辑
 │  │       ├─ ChatComponent.h/cpp  # 文本逻辑
 │  │       ├─ DiaryComponent.h/cpp # 写入桌宠日志/日记
@@ -140,12 +140,12 @@ ChatPanel跟随桌宠移动，ToolPanel有自己的拖动功能。两个都调�
 但我的桌宠本质上是一个铺满屏幕的大窗口，里面全部内容都是绘制的所以不需要容器
 │  ├─ UI/ # UI系统
 │  │   ├─ UIActor.h/cpp # UI核心对象（管理所有UI界面）
-│  │   ├─ Components/ # UI行为组件（交互逻辑）
+│  │   ├─ UIComponents/ # UI行为组件（交互逻辑）
 │  │   │   ├─ CloseComponent.h/cpp # 关闭全部页面（无页面时为展开输入栏，桌宠气泡不会被关闭）
 │  │   │   ├─ ScrollComponent.h/cpp # 滚动处理（列表/界面滚动）
 │  │   │   ├─ DragComponent.h/cpp # 拖动窗口/界面
 │  │   │   └─ InputComponent.h/cpp # UI输入框处理
-│  │   └─ Panels/ # UI界面（结构与渲染）
+│  │   └─ UIPanels/ # UI界面（结构与渲染）
 │  │       ├─ ChatPanel/
 │  │       │   ├─ BubbleChatPanel.h/cpp # 桌宠消息气泡UI
 │  │       │   ├─ InputChatPanel.h/cpp  # 用户输入对话UI
@@ -200,7 +200,7 @@ Source/
 ├─ Systems/ # 系统层（核心逻辑）
 │  ├─ Pet/ # 桌宠系统
 │  │   ├─ PetActor.h/cpp # 桌宠核心对象（状态机+组件管理）
-│  │   └─ Components/ # 桌宠功能组件
+│  │   └─ PetAComponents/ # 桌宠功能组件
 │  │       ├─ AudioComponent.h/cpp # 音频逻辑
 │  │       ├─ ChatComponent.h/cpp  # 文本逻辑
 │  │       ├─ DiaryComponent.h/cpp # 写入桌宠日志/日记
@@ -208,7 +208,7 @@ Source/
 │  │       └─ PetRenderComponent.h/cpp # 规划桌宠的绘制（位置/贴图/动画）
 │  ├─ UI/ # UI系统
 │  │   ├─ UIActor.h/cpp # UI核心对象（管理所有UI界面）
-│  │   ├─ Components/ # UI行为组件（交互逻辑）
+│  │   ├─ UIComponents/ # UI行为组件（交互逻辑）
 │  │   │   ├─ CloseComponent.h/cpp # 关闭全部页面（无页面时为展开输入栏，桌宠气泡不会被关闭）
 │  │   │   ├─ ScrollComponent.h/cpp # 滚动处理（列表/界面滚动）
 │  │   │   ├─ DragComponent.h/cpp # 拖动窗口/界面

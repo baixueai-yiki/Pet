@@ -43,7 +43,9 @@ namespace
         else if (s_imgWnd) { ShowWindow(s_imgWnd, SW_HIDE); }
 
         if (s_textWnd) InvalidateRect(s_textWnd, nullptr, TRUE);
-        AudioComponent::PlayAudioAuto(L"audio\\" + s_curKey);
+        std::wstring act = std::get<3>(s_entries[s_runIndex]);
+        if (!act.empty()) AudioComponent::PlayAudioAsset(L"audio\\" + act);
+        else AudioComponent::PlayAudioAuto(L"audio\\" + s_curKey);
     }
 
     LRESULT CALLBACK ImgWndProc(HWND,UINT,WPARAM,LPARAM);

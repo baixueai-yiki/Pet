@@ -12,6 +12,7 @@ std::wstring ChatGetButtonLabel(const std::wstring& key, const std::wstring& fal
 // 对话数据查询（供 InputComponent 使用）
 void ChatEnsureDialogLoaded();
 const std::wstring* ChatLookupDialog(const std::wstring& input);
+std::wstring ChatLastMatchedKey(); // 模糊匹配时返回匹配到的键名
 const std::wstring* ChatLookupButton(const std::wstring& key);
 
 // 状态 & 按时间触发语句

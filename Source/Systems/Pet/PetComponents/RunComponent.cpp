@@ -118,7 +118,7 @@ static StartupMode DetectStartupMode()
                     std::wstring bd = text.substr(pos+1,end-pos-1);
                     // 支持 "MM-DD" 和 "YYYY-MM-DD" 两种格式
                     if (bd.size() == 5)      isBirthday = (bd == today);          // "06-04"
-                    // "YYYY-MM-DD" 预留，以后扩展
+                    else if (bd.size() == 10) isBirthday = (bd.substr(5) == today); // "2026-06-04"
                 } } }
         }
     }
@@ -187,10 +187,11 @@ static std::vector<DialoguePanel::Entry> LoadSequence(StartupMode mode)
     for (const auto& k : keys) {
         auto it = map.find(k);
         if (it == map.end()) continue;
-        std::wstring text = it->second, mood = L"happy";
+        std::wstring raw = it->second, text = raw, mood = L"happy", action;
         size_t comma = text.rfind(L'，'); if (comma==std::wstring::npos) comma=text.rfind(L',');
         if (comma!=std::wstring::npos) { mood=text.substr(comma+1); text=text.substr(0,comma); }
-        entries.push_back({k, text, mood});
+        size_t pipe = mood.find(L'|'); if (pipe!=std::wstring::npos) { action=mood.substr(pipe+1); mood=mood.substr(0,pipe); }
+        entries.push_back({k, text, mood, action});
     }
     return entries;
 }

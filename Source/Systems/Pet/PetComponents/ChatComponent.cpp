@@ -1022,12 +1022,29 @@ void ChatEnsureDialogLoaded()
         LoadDialogConfig();
 }
 
+static std::wstring s_lastMatchKey;
+
 const std::wstring* ChatLookupDialog(const std::wstring& input)
 {
     ChatEnsureDialogLoaded();
+    s_lastMatchKey.clear();
     auto it = s_dialogMap.find(input);
-    return (it != s_dialogMap.end()) ? &it->second : nullptr;
+    if (it != s_dialogMap.end()) { s_lastMatchKey = input; return &it->second; }
+    // 关键词模糊匹配
+    std::vector<std::pair<const std::wstring*, std::wstring>> matches;
+    for (const auto& kv : s_dialogMap) {
+        if (!kv.first.empty() && input.find(kv.first) != std::wstring::npos)
+            matches.push_back({&kv.second, kv.first});
+    }
+    if (!matches.empty()) {
+        auto& m = matches[rand() % matches.size()];
+        s_lastMatchKey = m.second;
+        return m.first;
+    }
+    return nullptr;
 }
+
+std::wstring ChatLastMatchedKey() { return s_lastMatchKey; }
 
 const std::wstring* ChatLookupButton(const std::wstring& key)
 {

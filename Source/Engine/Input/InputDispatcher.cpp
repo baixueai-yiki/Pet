@@ -1,26 +1,24 @@
-﻿#include "InputDispatcher.h"
-#include "../../Systems/Pet/PetActor.h"
-#include "../../Systems/Pet/PetComponents/ChatComponent.h"
-#include "../../Core/Path.h"
-#include "../../Core/TextFile.h"
-#include "../../Systems/UI/UIPanels/ToolPanel/SettingToolPanel.h"
-#include "../../Systems/UI/UIPanels/ChatPanel/BubbleChatPanel.h"
-#include "../../Systems/UI/UIPanels/ChatPanel/InputChatPanel.h"
-#include "../../Systems/UI/UIPanels/ChatPanel/OptionChatPanel.h"
-#include "../../Systems/UI/UIActor.h"
-#include "../../Runtime/EventBus.h"
-#include <cwctype>
-#include <fstream>
-#include <sstream>
-#include <string>
-#include <vector>
+#include "InputDispatcher.h"
+#include "../../Core/PetState.h"
 #include <windows.h>
-#include <windowsx.h>  // 包含坐标解析等宏
+#include <windowsx.h>
+#include <cwctype>
+#include <string>
 
-extern PetState g_pet;
+// 回调列表（Systems 层注册）
+static InputCallback s_onPoke = nullptr;
+static InputCallback s_onDragUpdate = nullptr;
+static InputCallback s_onRightClick = nullptr;
+static InputCallback s_onDoubleClick = nullptr;
+static InputCallback s_onZhiZhi = nullptr;
 
+void RegisterOnPoke(InputCallback cb)           { s_onPoke = std::move(cb); }
+void RegisterOnDragUpdate(InputCallback cb)     { s_onDragUpdate = std::move(cb); }
+void RegisterOnRightClick(InputCallback cb)     { s_onRightClick = std::move(cb); }
+void RegisterOnDoubleClick(InputCallback cb)    { s_onDoubleClick = std::move(cb); }
+void RegisterOnZhiZhi(InputCallback cb)         { s_onZhiZhi = std::move(cb); }
 
-// 判断给定点是否落在当前宠物绘制区域，用于拖拽和点击判断
+// 判断给定点是否落在当前宠物绘制区域
 static bool IsInsidePet(int x, int y)
 {
     return x >= g_pet.x &&
@@ -29,70 +27,19 @@ static bool IsInsidePet(int x, int y)
            y <= g_pet.y + g_pet.h;
 }
 
-
-// 记录最近六次右键点击时间，用于识别“慢三连+快三连”组合
-static DWORD s_rightClickTimes[6] = {};
-static int s_rightClickCount = 0;
-static bool s_audioSeeded = false;
 static bool s_leftDown = false;
 static bool s_dragMoved = false;
 static bool s_dragInteractionLogged = false;
 static int s_downX = 0;
 static int s_downY = 0;
 static unsigned long long s_pokeCount = 0;
+static HANDLE s_pendingPokeTimer = nullptr;
 
 unsigned long long GetPokeCount()
 {
     return s_pokeCount;
 }
 
-static void PlayRandomPokeSound()
-{
-    if (!s_audioSeeded)
-    {
-        s_audioSeeded = true;
-        srand(static_cast<unsigned int>(GetTickCount()));
-    }
-
-    static const wchar_t* kSounds[] = {
-        L"audio\\poke_nya.wav",
-        L"audio\\poke_find.wav",
-        L"audio\\poke_ah.wav",
-        L"audio\\poke_poke.wav"
-    };
-    const int idx = rand() % (sizeof(kSounds) / sizeof(kSounds[0]));
-    EventEmit(L"audio.play", kSounds[idx]);
-}
-
-static std::wstring Trim(const std::wstring& s)
-{
-    size_t b = 0;
-    while (b < s.size() && iswspace(s[b]))
-        ++b;
-    size_t e = s.size();
-    while (e > b && iswspace(s[e - 1]))
-        --e;
-    return s.substr(b, e - b);
-}
-
-static std::wstring ToLower(std::wstring s)
-{
-    for (auto& ch : s)
-        ch = static_cast<wchar_t>(towlower(ch));
-    return s;
-}
-
-
-static std::wstring NormalizeTrigger(std::wstring v)
-{
-    v = ToLower(Trim(v));
-    if (v == L"right_click_once" || v == L"rightclickonce" || v == L"one" || v == L"1" || v == L"右键一次" || v == L"右键1次" || v == L"右键" || v == L"求救")
-        return L"right_click_once";
-    if (v == L"right_click_combo" || v == L"rightclickcombo" || v == L"combo" || v == L"6" || v == L"右键六次" || v == L"右键6次")
-        return L"right_click_combo";
-    return L"right_click_combo";
-}
-// 统一处理主窗口所有鼠标消息，拖拽/穿透/聊天触发都在这里处理
 void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     int x = GET_X_LPARAM(lParam);
@@ -110,25 +57,18 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             {
                 g_pet.isDragging = true;
                 s_dragMoved = true;
-                if (!s_dragInteractionLogged)
-                {
-                    s_dragInteractionLogged = true;
-                    ChatRecordInteraction();
-                }
+                s_dragInteractionLogged = true;
                 g_pet.dragOffsetX = s_downX - g_pet.x;
                 g_pet.dragOffsetY = s_downY - g_pet.y;
             }
         }
 
-        // 拖拽时更新宠物位置并触发重绘
         if (g_pet.isDragging)
         {
             g_pet.x = x - g_pet.dragOffsetX;
             g_pet.y = y - g_pet.dragOffsetY;
             InvalidateRect(hwnd, nullptr, TRUE);
-            BubbleChatPanel::UpdatePosition();
-            InputChatPanel::UpdatePosition();
-            OptionChatPanel::UpdatePosition();
+            if (s_onDragUpdate) s_onDragUpdate();
         }
 
         break;
@@ -136,7 +76,6 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_LBUTTONDOWN:
     {
-        // 只有点击在宠物区域内才开始拖拽
         if (IsInsidePet(x, y))
         {
             s_leftDown = true;
@@ -149,12 +88,18 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
 
     case WM_LBUTTONUP:
-        // 松开左键结束拖拽
         if (s_leftDown && !s_dragMoved && IsInsidePet(x, y))
         {
             ++s_pokeCount;
-            PlayRandomPokeSound();
-            ChatRecordInteraction();
+            // 延迟触发戳戳，留给双击窗口判断
+            if (s_pendingPokeTimer)
+                DeleteTimerQueueTimer(nullptr, s_pendingPokeTimer, nullptr);
+            CreateTimerQueueTimer(&s_pendingPokeTimer, nullptr,
+                [](PVOID, BOOLEAN) {
+                    s_pendingPokeTimer = nullptr;
+                    if (s_onPoke) s_onPoke();
+                },
+                nullptr, 250, 0, WT_EXECUTEDEFAULT);
         }
         s_leftDown = false;
         s_dragMoved = false;
@@ -165,8 +110,17 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_LBUTTONDBLCLK:
     {
+        // 取消戳戳，换 zhizhi
+        if (s_pendingPokeTimer)
+        {
+            DeleteTimerQueueTimer(nullptr, s_pendingPokeTimer, nullptr);
+            s_pendingPokeTimer = nullptr;
+        }
         if (IsInsidePet(x, y))
-            Setting::ToggleOverlay();
+        {
+            if (s_onZhiZhi) s_onZhiZhi();
+            if (s_onDoubleClick) s_onDoubleClick();
+        }
         break;
     }
 
@@ -174,16 +128,15 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         if (!IsInsidePet(x, y))
             break;
-        UIActor::GetInstance().NotifyMouseClick(x, y);
+        if (s_onRightClick) s_onRightClick();
         break;
     }
 
     case WM_MOUSEWHEEL:
-        UIActor::GetInstance().NotifyMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam));
+        // Wheel events handled by WindowLifecycle overlay check
         break;
 
     default:
         break;
     }
 }
-

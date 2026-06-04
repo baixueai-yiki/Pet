@@ -1,9 +1,15 @@
 #include "InputChatPanel.h"
-#include "ChatPanelInternal.h"
 #include "../../../Pet/PetActor.h"
-#include "../../../Pet/PetComponents/ChatComponent.h"
+#include "../../../Pet/PetComponents/InputComponent.h"
 #include "../../../../Runtime/StateManager.h"
 #include <imm.h>
+#include <windowsx.h>
+
+constexpr int kInputWidth = 300;
+constexpr int kInputHeight = 40;
+
+namespace { static HFONT s_inputFont = nullptr;
+void EnsureInputFont() { if (!s_inputFont) s_inputFont = CreateFontW(20,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_DONTCARE,L"Microsoft YaHei UI"); } }
 
 namespace
 {
@@ -27,8 +33,8 @@ namespace
             HBRUSH hBrush = CreateSolidBrush(flash ? RGB(255, 200, 220) : RGB(255, 240, 245));
             FillRect(hdc, &rc, hBrush);
             DeleteObject(hBrush);
-            if (g_inputFont)
-                SelectObject(hdc, g_inputFont);
+            if (s_inputFont)
+                SelectObject(hdc, s_inputFont);
             SetBkMode(hdc, TRANSPARENT);
             std::wstring display = s_inputText + s_imeText;
             DrawTextW(hdc, display.c_str(), -1, &rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -113,12 +119,12 @@ namespace
         case WM_DESTROY:
             if (!s_inputText.empty())
             {
-                ChatHandleInput(GetParent(hwnd), s_inputText);
+                InputComponent::HandleInput(GetParent(hwnd), s_inputText);
             }
             s_inputText.clear();
             s_imeText.clear();
             s_hInputWnd = nullptr;
-            StateSet(L"ui.panel", L"idle");
+            // 状态由 HandleInput / Hide() 管理，这里不覆盖
             break;
         default:
             return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -130,7 +136,7 @@ namespace
 void InputChatPanel::Show(HWND hwndParent)
 {
     StateSet(L"ui.panel", L"input");
-    EnsureFonts();
+    EnsureInputFont();
 
     WNDCLASSW wc = {};
     wc.lpfnWndProc = TextInputProc;
@@ -174,8 +180,8 @@ void InputChatPanel::Show(HWND hwndParent)
         return;
 
     SetLayeredWindowAttributes(s_hInputWnd, 0, 220, LWA_ALPHA);
-    if (g_inputFont)
-        SendMessageW(s_hInputWnd, WM_SETFONT, (WPARAM)g_inputFont, TRUE);
+    if (s_inputFont)
+        SendMessageW(s_hInputWnd, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
     ShowWindow(s_hInputWnd, SW_SHOW);
     SetFocus(s_hInputWnd);
 }

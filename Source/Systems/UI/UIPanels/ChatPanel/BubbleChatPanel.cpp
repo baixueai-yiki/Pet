@@ -1,19 +1,33 @@
 #include "BubbleChatPanel.h"
-#include "ChatPanelInternal.h"
 #include "../../../Pet/PetActor.h"
 #include <string>
+
+constexpr int kTalkPadding = 8;
+constexpr int kTalkMaxWidth = 240;
+constexpr UINT_PTR kTalkAutoHideTimer = 1;
+constexpr UINT kTalkAutoHideMs = 3000;
 
 namespace
 {
     static HWND s_hTalkWnd = nullptr;
     static std::wstring s_talkText;
+    static HFONT s_talkFont = nullptr;
+
+    void EnsureTalkFont()
+    {
+        if (!s_talkFont)
+            s_talkFont = CreateFontW(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE,
+                L"Microsoft YaHei UI");
+    }
 
     void MeasureTalkText(int maxWidth, int& outW, int& outH)
     {
         HDC hdc = GetDC(nullptr);
         RECT rc = { 0, 0, maxWidth, 0 };
-        if (g_talkFont)
-            SelectObject(hdc, g_talkFont);
+        if (s_talkFont)
+            SelectObject(hdc, s_talkFont);
         DrawTextW(hdc, s_talkText.c_str(), -1, &rc, DT_CALCRECT | DT_WORDBREAK);
         ReleaseDC(nullptr, hdc);
         outW = (rc.right - rc.left) + kTalkPadding * 2;
@@ -58,8 +72,8 @@ namespace
             SelectObject(hdc, oldPen);
             DeleteObject(brush);
             DeleteObject(pen);
-            if (g_talkFont)
-                SelectObject(hdc, g_talkFont);
+            if (s_talkFont)
+                SelectObject(hdc, s_talkFont);
             SetBkMode(hdc, TRANSPARENT);
             SetTextColor(hdc, RGB(50, 50, 50));
             RECT textRc = rc;
@@ -75,10 +89,12 @@ namespace
     }
 }
 
-void BubbleChatPanel::Show(HWND hwndParent, const wchar_t* text)
+void BubbleChatPanel::Show(HWND hwndParent, const wchar_t* text, int durationMs)
 {
     s_talkText = text ? text : L"";
-    EnsureFonts();
+    int autoHideMs = (durationMs == 0) ? (int)kTalkAutoHideMs :
+                     (durationMs < 0)  ? 0 : durationMs;
+    EnsureTalkFont();
 
     WNDCLASSW wc = {};
     wc.lpfnWndProc = TalkProc;
@@ -118,8 +134,11 @@ void BubbleChatPanel::Show(HWND hwndParent, const wchar_t* text)
     int w = 0, h = 0;
     MeasureTalkText(kTalkMaxWidth, w, h);
     PositionTalkWindow(s_hTalkWnd, w, h);
-    SetTimer(s_hTalkWnd, kTalkAutoHideTimer, kTalkAutoHideMs, nullptr);
+    if (autoHideMs > 0)
+        SetTimer(s_hTalkWnd, kTalkAutoHideTimer, (UINT)autoHideMs, nullptr);
     ShowWindow(s_hTalkWnd, SW_SHOW);
+    InvalidateRect(s_hTalkWnd, nullptr, TRUE);
+    UpdateWindow(s_hTalkWnd);
 }
 
 void BubbleChatPanel::UpdatePosition()

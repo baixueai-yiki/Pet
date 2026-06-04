@@ -1,6 +1,6 @@
-﻿param(
+param(
     [string]$SourceRoot = "Source",
-    [string]$OutputExe = "Distribution/alpha/Miss_qing/Pet.exe",
+    [string]$OutputExe = "Distribution/alpha/MissCarrot/MissCarrot.exe",
     [string]$ObjectDir = "Build/obj"
 )
 
@@ -66,6 +66,18 @@ foreach ($cpp in $cppFiles) {
     }
 
     $objectFiles += $obj
+}
+
+# 编译资源文件（图标）
+$rcFile = Join-Path $sourcePath "Pet.rc"
+if (Test-Path -LiteralPath $rcFile) {
+    $resFile = Join-Path $objectPath "Pet.res"
+    $rcArgs = @("/nologo", "/I", $projectRoot, "/fo", $resFile, $rcFile)
+    & rc @rcArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "Resource compilation failed with exit code $LASTEXITCODE"
+    }
+    $objectFiles += $resFile
 }
 
 $linkArgs = @(

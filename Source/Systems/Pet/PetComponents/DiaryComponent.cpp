@@ -1,8 +1,12 @@
 #include "DiaryComponent.h"
+#include "../../../Core/PetState.h"
 #include "../../../Core/Path.h"
+#include "../PetActor.h"
 #include "../../../Runtime/Scheduler.h"
 #include "../../../Runtime/EventBus.h"
 #include "../../../Core/TextFile.h"
+#include <cstdio>
+#include <ctime>
 #include <windows.h>
 #include <fstream>
 #include <sstream>
@@ -166,15 +170,49 @@ static void WriteStateJson()
     CreateDirectoryW(configDir.c_str(), nullptr);
     const std::wstring path = configDir + L"\\state.json";
 
+    // 读入 birthday（不丢失用户设置的生日键）
+    std::wstring birthday;
+    std::wstring oldText;
+    if (TextFile::ReadText(path, oldText))
+    {
+        size_t pos = oldText.find(L"\"birthday\"");
+        if (pos != std::wstring::npos)
+        {
+            pos = oldText.find(L'"', pos + 10);
+            if (pos != std::wstring::npos)
+            {
+                size_t end = oldText.find(L'"', pos + 1);
+                if (end != std::wstring::npos)
+                    birthday = oldText.substr(pos + 1, end - pos - 1);
+            }
+        }
+    }
+
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
     if (!out.is_open())
         return;
 
+    // 当前日期
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    std::wstring dateStr = std::to_wstring(st.wYear) + L"-" +
+        (st.wMonth < 10 ? L"0" : L"") + std::to_wstring(st.wMonth) + L"-" +
+        (st.wDay < 10 ? L"0" : L"") + std::to_wstring(st.wDay);
+
     out << "{\n";
     out << "  \"last_interaction_time\": " << lastInteraction << ",\n";
     out << "  \"valence\": " << valence << ",\n";
-    out << "  \"arousal\": " << arousal << "\n";
-    out << "}\n";
+    out << "  \"arousal\": " << arousal << ",\n";
+    out << "  \"pet_x\": " << g_pet.x << ",\n";
+    out << "  \"pet_y\": " << g_pet.y << ",\n";
+    out << "  \"cycle_phase\": " << g_cycle.phase << ",\n";
+    out << "  \"cycle_day\": " << g_cycle.day << ",\n";
+    out << "  \"last_run_date\": \"" << WideToUtf8(dateStr) << "\",\n";
+    out << "  \"triggered_mask\": " << PetGetTriggeredMask() << ",\n";
+    out << "  \"last_trigger_date\": \"" << WideToUtf8(PetGetLastTriggerDate()) << "\"";
+    if (!birthday.empty())
+        out << ",\n  \"birthday\": \"" << WideToUtf8(birthday) << "\"";
+    out << "\n}\n";
 }
 
 void OnProgramExit()

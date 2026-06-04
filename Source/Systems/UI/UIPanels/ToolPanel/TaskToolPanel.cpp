@@ -95,16 +95,21 @@ namespace
         }
         s_tasks.clear();
 
+        DWORD selfPid = GetCurrentProcessId();
+
+        struct Ctx { std::vector<TaskItem>* list; DWORD selfPid; };
+        Ctx ctx = { &s_tasks, GetCurrentProcessId() };
         EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
-            auto* list = reinterpret_cast<std::vector<TaskItem>*>(lParam);
+            auto* ctx = reinterpret_cast<Ctx*>(lParam);
+            DWORD pid = 0;
+            GetWindowThreadProcessId(hwnd, &pid);
+            if (pid == ctx->selfPid) return TRUE;
             if (IsAppWindow(hwnd))
             {
                 TaskItem item;
                 wchar_t title[256] = {};
                 GetWindowTextW(hwnd, title, 256);
                 item.title = title;
-                DWORD pid = 0;
-                GetWindowThreadProcessId(hwnd, &pid);
                 item.pid = pid;
                 item.icon = GetWindowIcon(hwnd);
 
@@ -125,10 +130,10 @@ namespace
                     }
                     CloseHandle(hSnapshot);
                 }
-                list->push_back(item);
+                ctx->list->push_back(item);
             }
             return TRUE;
-        }, reinterpret_cast<LPARAM>(&s_tasks));
+        }, reinterpret_cast<LPARAM>(&ctx));
     }
 
     void PositionWindow(HWND hwnd)

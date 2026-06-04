@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include <functional>
 #include <windows.h>
 
 // 把窗口消息中的鼠标输入分发到具体的交互逻辑中
@@ -6,3 +7,11 @@ void HandleInput(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 void UpdatePetWindowRegion(HWND hwnd);
 // 获取本次运行的戳桌宠次数
 unsigned long long GetPokeCount();
+
+// 回调注册（Systems 层注册感兴趣的事件）
+using InputCallback = std::function<void()>;
+void RegisterOnPoke(InputCallback cb);
+void RegisterOnDragUpdate(InputCallback cb);
+void RegisterOnRightClick(InputCallback cb);
+void RegisterOnDoubleClick(InputCallback cb);
+void RegisterOnZhiZhi(InputCallback cb);

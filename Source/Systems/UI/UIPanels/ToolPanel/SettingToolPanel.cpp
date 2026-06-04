@@ -1,5 +1,6 @@
 ﻿#include "SettingToolPanel.h"
 #include "TaskToolPanel.h"
+#include "MusicToolPanel.h"
 #include "../../../../Runtime/StateManager.h"
 #include "../../../../Core/Path.h"
 #include "../../../../Core/TextFile.h"
@@ -55,12 +56,13 @@ namespace
     // 值: "idle" | "input" | "overlay_settings" | "overlay_tasks" | "overlay_task_menu"
     static bool IsOverlayOpen() {
         auto s = StateGet(L"ui.panel");
-        return s == L"overlay_settings" || s == L"overlay_tasks" || s == L"overlay_task_menu";
+        return s == L"overlay_settings" || s == L"overlay_tasks" || s == L"overlay_task_menu" || s == L"overlay_music";
     }
     static int ActiveTabIndex() {
         auto s = StateGet(L"ui.panel");
         if (s == L"overlay_settings") return 0;
         if (s == L"overlay_tasks" || s == L"overlay_task_menu") return 1;
+        if (s == L"overlay_music") return 2;
         return -1;
     }
 
@@ -781,8 +783,8 @@ namespace Setting
         HFONT oldFont = (HFONT)SelectObject(hdc, GetStockObject(DEFAULT_GUI_FONT));
 
         // 竖排标签文字
-        const wchar_t* tabLabels[] = { L"设置", L"任务" };
-        for (int i = 0; i < 2; ++i)
+        const wchar_t* tabLabels[] = { L"设置", L"任务", L"音乐" };
+        for (int i = 0; i < 3; ++i)
         {
             RECT tabRc = { s_overlayRect.left,
                            s_overlayRect.top + i * kTabHeight,
@@ -920,7 +922,7 @@ namespace Setting
                 }
             }
         }
-        else
+        else if (ActiveTabIndex() == 1)
         {
             // === 任务页 ===
             s_taskItemAreas.clear();
@@ -951,7 +953,37 @@ namespace Setting
                         title = title.substr(0, maxChars - 1) + L"…";
                     TextOutW(hdc, contentLeft + 20, y + 1, title.c_str(), (int)title.size());
 
-                    // 记录 hit-test 区域
+                    TaskItemArea area;
+                    area.rect = { contentLeft, y, s_overlayRect.right - 4, y + itemH };
+                    area.index = i;
+                    s_taskItemAreas.push_back(area);
+
+                    y += itemH;
+                }
+            }
+        }
+        else if (ActiveTabIndex() == 2)
+        {
+            // === 音乐页 ===
+            SetTextColor(hdc, RGB(160, 130, 145));
+            int count = MusicToolPanel::GetMusicCount();
+            if (count == 0)
+            {
+                TextOutW(hdc, contentLeft + 4, contentTop, L"No music files in assets/music/", 31);
+            }
+            else
+            {
+                s_taskItemAreas.clear();
+                int y = contentTop;
+                int itemH = 20;
+                for (int i = 0; i < count; ++i)
+                {
+                    if (y + itemH > s_overlayRect.bottom - kContentBottomPadding)
+                        break;
+
+                    std::wstring name = MusicToolPanel::GetMusicName(i);
+                    TextOutW(hdc, contentLeft + 4, y + 1, name.c_str(), (int)name.size());
+
                     TaskItemArea area;
                     area.rect = { contentLeft, y, s_overlayRect.right - 4, y + itemH };
                     area.index = i;
@@ -1058,6 +1090,20 @@ namespace Setting
             return true;
         }
 
+        if (msg == WM_LBUTTONDBLCLK && ActiveTabIndex() == 2)
+        {
+            for (const auto& area : s_taskItemAreas)
+            {
+                if (x >= area.rect.left && x <= area.rect.right &&
+                    y >= area.rect.top && y <= area.rect.bottom)
+                {
+                    MusicToolPanel::PlayMusic(area.index);
+                    return true;
+                }
+            }
+            return true; // 在音乐页内但不在文件上，吞事件
+        }
+
         if (msg == WM_RBUTTONDOWN && ActiveTabIndex() == 1)
         {
             for (const auto& area : s_taskItemAreas)
@@ -1083,9 +1129,10 @@ namespace Setting
             if (x >= s_overlayRect.left && x <= s_overlayRect.left + kTabWidth)
             {
                 tabIndex = (y - s_overlayRect.top) / kTabHeight;
-                if (tabIndex >= 0 && tabIndex <= 1)
+                if (tabIndex >= 0 && tabIndex <= 2)
                 {
-                    StateSet(L"ui.panel", tabIndex == 0 ? L"overlay_settings" : L"overlay_tasks");
+                    static const wchar_t* kStates[] = { L"overlay_settings", L"overlay_tasks", L"overlay_music" };
+                    StateSet(L"ui.panel", kStates[tabIndex]);
                     InvalidateRect(hwnd, nullptr, TRUE);
                     return true;
                 }

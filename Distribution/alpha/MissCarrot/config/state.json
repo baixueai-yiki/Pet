@@ -1,0 +1,13 @@
+{
+  "last_interaction_time": 0,
+  "valence": 8,
+  "arousal": 8,
+  "pet_x": 1010,
+  "pet_y": 512,
+  "cycle_phase": 0,
+  "cycle_day": 1,
+  "last_run_date": "2026-06-04",
+  "triggered_mask": 0,
+  "last_trigger_date": "2026-06-04",
+  "birthday": "2026-06-04"
+}

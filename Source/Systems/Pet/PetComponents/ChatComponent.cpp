@@ -2,18 +2,23 @@
 #include <windowsx.h>
 #include <imm.h>
 #include "ChatComponent.h"
-#include "../../UI/UIPanels/ChatPanel/BubbleChatPanel.h"
-#include "../../UI/UIPanels/ChatPanel/InputChatPanel.h"
-#include "../../UI/UIPanels/ChatPanel/OptionChatPanel.h"
-#include "Core/Path.h"
+#include "AudioComponent.h"
 #include "DiaryComponent.h"
+#include "../PetActor.h"
+// Core
+#include "Core/Path.h"
 #include "Core/TextFile.h"
+// Runtime
 #include "Runtime/Scheduler.h"
 #include "Runtime/StateManager.h"
-#include "../PetActor.h"
-#include "../../../Engine/Input/InputDispatcher.h"
-#include "../../UI/UIPanels/ToolPanel/SettingToolPanel.h"
-#include "../../UI/UIPanels/ToolPanel/TaskToolPanel.h"
+// Engine
+#include "Engine/Input/InputDispatcher.h"
+// UI
+#include "Systems/UI/UIPanels/ChatPanel/BubbleChatPanel.h"
+#include "Systems/UI/UIPanels/ChatPanel/InputChatPanel.h"
+#include "Systems/UI/UIPanels/ChatPanel/OptionChatPanel.h"
+#include "Systems/UI/UIPanels/ToolPanel/SettingToolPanel.h"
+#include "Systems/UI/UIPanels/ToolPanel/TaskToolPanel.h"
 #include <string>
 #include <fstream>
 #include <map>
@@ -71,7 +76,7 @@ static bool IsTaskListTrigger(const std::wstring& text)
 // 鍓嶇疆澹版槑
 static void HideKillButton();
 static bool IsAppWindow(HWND hwnd);
-void ChatTalk(HWND hwnd, const wchar_t* text);
+void ChatTalk(HWND hwnd, const wchar_t* text, int durationMs);
 static void BuildTaskListEntries();
 
 static std::wstring Trim(const std::wstring& text);
@@ -220,30 +225,56 @@ struct IdleEntry
     std::wstring text;
 };
 
-static bool LoadIdleMap(std::map<std::wstring, std::wstring>& mapOut)
+bool LoadIdleMap(std::map<std::wstring, std::wstring>& mapOut)
 {
-    std::vector<std::wstring> lines;
-    if (!TextFile::ReadLines(GetAssetPath(L"chat\\chat_idle.txt"), lines))
-        return false;
+    // \u5148\u5c1d\u8bd5 JSON\uff0c\u518d\u56de\u9000 txt
+    std::wstring text;
+    if (!TextFile::ReadText(GetAssetPath(L"chat\\chat_idle.json"), text))
+    {
+        if (!TextFile::ReadText(GetAssetPath(L"chat\\chat_dialogue.json"), text))
+            return false;
+    }
 
     mapOut.clear();
-    for (const auto& lineRaw : lines)
+    // JSON \u89e3\u6790\uff08\u4e3b\u6587\u4ef6 chat_idle.json\uff09
     {
-        std::wstring line = Trim(lineRaw);
-        if (line.empty() || line[0] == L'#')
-            continue;
-        size_t eq = line.find(L'=');
-        if (eq == std::wstring::npos)
-            continue;
-        std::wstring key = Trim(line.substr(0, eq));
-        if (!key.empty() && key.front() == L'\ufeff')
-            key.erase(0, 1);
-        std::wstring value = Trim(line.substr(eq + 1));
-        mapOut[key] = value;
+        size_t pos = 0;
+        while (pos < text.size()) {
+            pos = text.find(L'"', pos); if (pos == std::wstring::npos) break;
+            size_t keyEnd = text.find(L'"', pos + 1); if (keyEnd == std::wstring::npos) break;
+            std::wstring key = text.substr(pos + 1, keyEnd - pos - 1); pos = keyEnd + 1;
+            pos = text.find(L':', pos); if (pos == std::wstring::npos) break; pos++;
+            while (pos < text.size() && iswspace(text[pos])) pos++;
+            if (pos >= text.size()) break;
+            if (text[pos] == L'"') {
+                size_t valEnd = text.find(L'"', pos + 1); if (valEnd == std::wstring::npos) break;
+                mapOut[key] = text.substr(pos + 1, valEnd - pos - 1); pos = valEnd + 1;
+            } else if (text[pos] == L'{') {
+                size_t objEnd = text.find(L'}', pos); if (objEnd == std::wstring::npos) break;
+                std::wstring obj = text.substr(pos + 1, objEnd - pos - 1); pos = objEnd + 1;
+                std::wstring valText, valMood, valAction;
+                size_t tp = obj.find(L"\"text\""); if (tp != std::wstring::npos) {
+                    tp = obj.find(L'"', tp + 6); if (tp != std::wstring::npos) {
+                        size_t te = obj.find(L'"', tp + 1); if (te != std::wstring::npos)
+                            valText = obj.substr(tp + 1, te - tp - 1);
+                    } }
+                size_t mp = obj.find(L"\"mood\""); if (mp != std::wstring::npos) {
+                    mp = obj.find(L'"', mp + 6); if (mp != std::wstring::npos) {
+                        size_t me = obj.find(L'"', mp + 1); if (me != std::wstring::npos)
+                            valMood = obj.substr(mp + 1, me - mp - 1);
+                    } }
+                size_t ap = obj.find(L"\"action\""); if (ap != std::wstring::npos) {
+                    ap = obj.find(L'"', ap + 8); if (ap != std::wstring::npos) {
+                        size_t ae = obj.find(L'"', ap + 1); if (ae != std::wstring::npos)
+                            valAction = obj.substr(ap + 1, ae - ap - 1);
+                    } }
+                mapOut[key] = valText + (valMood.empty() ? L"" : L"\uff0c" + valMood)
+                                        + (valAction.empty() ? L"" : L"|" + valAction);
+            } else continue;
+        }
     }
     return !mapOut.empty();
 }
-
 static bool LoadIdleLines(std::vector<IdleEntry>& linesOut)
 {
     std::map<std::wstring, std::wstring> map;
@@ -253,7 +284,7 @@ static bool LoadIdleLines(std::vector<IdleEntry>& linesOut)
     linesOut.clear();
     for (int i = 1; i <= 5; ++i)
     {
-        std::wstring key = L"idle_" + std::to_wstring(i);
+        std::wstring key = L"chat_idle_" + std::to_wstring(i);
         auto it = map.find(key);
         if (it != map.end() && !it->second.empty())
             linesOut.push_back({ key, it->second });
@@ -300,14 +331,15 @@ static bool LoadDiaryScriptMap(std::map<std::wstring, std::wstring>& out)
 
 static std::wstring GetDiaryCategoryForKey(const std::wstring& key)
 {
-    if (key.rfind(L"idle_", 0) == 0)
+    if (key.rfind(L"chat_idle_", 0) == 0)
         return L"idle";
-    if (key.rfind(L"sleep_", 0) == 0)
+    if (key.rfind(L"chat_sleep_", 0) == 0)
         return L"sleep";
-    if (key.rfind(L"morning_", 0) == 0 ||
-        key.rfind(L"lunch_", 0) == 0 ||
-        key.rfind(L"dinner_", 0) == 0 ||
-        key.rfind(L"night_", 0) == 0)
+    if (key.rfind(L"chat_morning_", 0) == 0 ||
+        key.rfind(L"chat_lunch_", 0) == 0 ||
+        key.rfind(L"chat_dinner_", 0) == 0 ||
+        key.rfind(L"chat_night_", 0) == 0 ||
+        key.rfind(L"chat_afternoon_", 0) == 0)
         return L"greeting";
     return L"";
 }
@@ -358,7 +390,7 @@ static void TryAppendDiaryForKeyword(const std::wstring& key, const std::wstring
     ++count;
 }
 
-static bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::wstring& keyUsed)
+bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::wstring& keyUsed)
 {
     if (key.empty())
         return false;
@@ -369,7 +401,7 @@ static bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::ws
     std::vector<std::wstring> candidates;
     for (int i = 1; i <= 10; ++i)
     {
-        std::wstring k = key + L"_" + std::to_wstring(i);
+        std::wstring k = L"chat_" + key + L"_" + std::to_wstring(i);
         auto it = map.find(k);
         if (it != map.end() && !it->second.empty())
             candidates.push_back(it->second);
@@ -387,7 +419,7 @@ static bool GetIdleTextByKey(const std::wstring& key, std::wstring& out, std::ws
         return true;
     }
 
-    auto it = map.find(key);
+    auto it = map.find(L"chat_" + key);
     if (it == map.end() || it->second.empty())
         return false;
     out = it->second;
@@ -425,7 +457,7 @@ static void PlayIdleSound(const std::wstring& key)
 {
     if (key.empty())
         return;
-    EventEmit(L"audio.play", L"audio\\" + key + L".wav");
+    AudioComponent::PlayAudioAuto(L"audio\\" + key);
 }
 
 static std::wstring ToLowerCopy(std::wstring s)
@@ -675,20 +707,97 @@ static bool CheckGameKeywords(HWND hwnd)
 
 static std::wstring GetIdleOverrideKeyForHour(int hour)
 {
-    const int morning = Setting::GetInt(L"鏃╁畨鏃堕棿", 7);
-    const int lunch = Setting::GetInt(L"鍗堥鏃堕棿", 12);
-    const int dinner = Setting::GetInt(L"鏅氶鏃堕棿", 18);
-    const int night = Setting::GetInt(L"鏅氬畨鏃堕棿", 22);
+    const int morning   = Setting::GetInt(L"早安时间", 7);
+    const int lunch     = Setting::GetInt(L"午餐时间", 12);
+    const int afternoon = Setting::GetInt(L"下午时间", 15);
+    const int dinner    = Setting::GetInt(L"晚餐时间", 18);
+    const int night     = Setting::GetInt(L"晚安时间", 22);
 
-    if (hour == morning)
-        return L"morning";
-    if (hour == lunch)
-        return L"lunch";
-    if (hour == dinner)
-        return L"dinner";
-    if (hour == night)
-        return L"night";
+    if (hour == morning)   return L"morning";
+    if (hour == lunch)     return L"lunch";
+    if (hour == afternoon) return L"afternoon";
+    if (hour == dinner)    return L"dinner";
+    if (hour == night)     return L"night";
     return L"";
+}
+
+bool ChatTryIdleLine(HWND hwnd)
+{
+    int hour = GetLocalHour();
+    std::wstring key = GetIdleOverrideKeyForHour(hour);
+    if (key.empty())
+        key = L"idle";   // 非特殊时间用闲言（sleep 时段暂不使用）
+
+    std::wstring text, keyUsed;
+    if (!GetIdleTextByKey(key, text, keyUsed))
+        return false;
+
+    ChatTalk(hwnd, text.c_str());
+    ChatRecordInteraction();
+
+    // 播放 action 指定的音频
+    {
+        std::map<std::wstring, std::wstring> map;
+        if (LoadIdleMap(map)) {
+            auto it = map.find(keyUsed);
+            if (it != map.end()) {
+                size_t actPos = it->second.find(L'|');
+                if (actPos != std::wstring::npos) {
+                    std::wstring act = it->second.substr(actPos + 1);
+                    AudioComponent::PlayAudioAsset(L"audio\\" + act);
+                }
+    }}}
+
+    // 尝试记录日记
+    TryAppendDiaryForKey(keyUsed);
+
+    // 补充语句：概率 = arousal% * 2
+    int arousal = PetGetArousal();
+    if (!s_idleSeeded)
+    {
+        s_idleSeeded = true;
+        srand(static_cast<unsigned int>(GetTickCount()));
+    }
+    if ((rand() % 100) < (arousal * 2))
+    {
+        // 补充语句也尝试从 idle 里取第二轮
+        std::wstring followText, followKey;
+        if (GetIdleTextByKey(key, followText, followKey))
+            ChatTalk(hwnd, followText.c_str());
+    }
+    return true;
+}
+
+bool ChatTrySleepLine(HWND hwnd)
+{
+    std::wstring text, keyUsed;
+    if (!GetIdleTextByKey(L"sleep", text, keyUsed))
+    {
+        // 兜底：chat_idle.txt 没有 sleep_ 条目时用默认语句
+        text = L"晚安……该休息了哦。";
+        keyUsed = L"chat_sleep";
+    }
+
+    ChatTalk(hwnd, text.c_str());
+    ChatRecordInteraction();
+
+    {
+        std::map<std::wstring, std::wstring> map;
+        if (LoadIdleMap(map)) {
+            auto it = map.find(keyUsed);
+            if (it != map.end()) {
+                size_t actPos = it->second.find(L'|');
+                if (actPos != std::wstring::npos) {
+                    std::wstring act = it->second.substr(actPos + 1);
+                    AudioComponent::PlayAudioAsset(L"audio\\" + act);
+                }
+    }}}
+
+    TryAppendDiaryForKey(keyUsed);
+
+    int delta = (rand() % 2) ? 1 : -1;
+    PetCycleAdvanceDay(delta);
+    return true;
 }
 
 static bool UpdateDialogMetadata(const std::wstring& path)
@@ -716,81 +825,77 @@ static bool DialogFileChanged()
 }
 
 // 閰嶇疆鏂囦欢璇诲彇
-static void LoadDialogConfig()
-{
-    s_dialogMap.clear();
-    s_buttonMap.clear();
-    s_buttonLabelMap.clear();
-
-    std::vector<std::wstring> lines;
-    const std::wstring path = GetAssetPath(L"chat\\chat_safeword.txt");
-    if (!TextFile::ReadLines(path, lines))
-        return;
-
-    for (const auto& lineRaw : lines)
-    {
-        std::wstring line = Trim(lineRaw);
-        if (line.empty())
-            continue;
-
-        // 涓夋寮忥細key=label=reply
-        size_t firstEq = line.find(L'=');
-        if (firstEq == std::wstring::npos)
-            continue;
-        size_t secondEq = line.find(L'=', firstEq + 1);
-
-        std::wstring key = Trim(line.substr(0, firstEq));
-        // 绉婚櫎 BOM
-        if (!key.empty() && key.front() == L'\ufeff')
-            key.erase(0, 1);
-
-        std::wstring value;
-        std::wstring label;
-
-        if (secondEq != std::wstring::npos)
-        {
-            label = Trim(line.substr(firstEq + 1, secondEq - firstEq - 1));
-            value = Trim(line.substr(secondEq + 1));
-        }
-        else
-        {
-            value = Trim(line.substr(firstEq + 1));
-        }
-
-        // 鍒ゆ柇鏄惁涓烘寜閽€夐」 / 鎸夐挳鏄剧ず鏂囨湰
-        if (!key.empty() && key[0] == L'#')
-        {
-            // 绾﹀畾锛?鎸夐挳1=瀵瑰簲鐐瑰嚮鍚庣殑鍥炲
-            s_buttonMap[key.substr(1)] = value;
-            continue;
-        }
-
-        // 鑻ユ槸涓夋寮忥紝璁や负杩欐槸鎸夐挳閰嶇疆锛歬ey=鎸夐挳鏄剧ず鏂囨湰=鐐瑰嚮鍥炲
-        if (!label.empty())
-        {
-            s_buttonLabelMap[key] = label;
-            s_buttonMap[key] = value;
-            continue;
-        }
-
-        const std::wstring labelPrefixEn = L"button_text:";
-        const std::wstring labelPrefixCn = L"鎸夐挳鏂囨湰:";
-        if (key.rfind(labelPrefixEn, 0) == 0)
-        {
-            s_buttonLabelMap[key.substr(labelPrefixEn.size())] = value;
-            continue;
-        }
-        if (key.rfind(labelPrefixCn, 0) == 0)
-        {
-            s_buttonLabelMap[key.substr(labelPrefixCn.size())] = value;
-            continue;
-        }
-
-        s_dialogMap[key] = value;
+	static void LoadDialogConfig()
+	{
+	    s_dialogMap.clear();
+	    s_buttonMap.clear();
+	    s_buttonLabelMap.clear();
+	    std::wstring text; std::wstring path;
+	    if (TextFile::ReadText(GetAssetPath(L"chat\\chat_pet.json"), text))
+	        path = GetAssetPath(L"chat\\chat_pet.json");
+	    else if (TextFile::ReadText(GetAssetPath(L"chat\\chat_safeword.txt"), text))
+	        path = GetAssetPath(L"chat\\chat_safeword.txt");
+	    else return;
+    // JSON 解析
+    size_t p = 0;
+    while (p < text.size()) {
+        p = text.find(L'"', p); if (p == std::wstring::npos) break;
+        size_t ke = text.find(L'"', p + 1); if (ke == std::wstring::npos) break;
+        std::wstring key = text.substr(p + 1, ke - p - 1); p = ke + 1;
+        p = text.find(L':', p); if (p == std::wstring::npos) break;
+        p++; while (p < text.size() && iswspace(text[p])) p++;
+        if (p >= text.size()) break;
+        std::wstring vt, vl, l1, l2, action;
+        if (text[p] == L'{') {
+            size_t oe = text.find(L'}', p); if (oe == std::wstring::npos) break;
+            std::wstring obj = text.substr(p + 1, oe - p - 1); p = oe + 1;
+            // "text"
+            size_t tp = obj.find(L"\"text\""); if (tp != std::wstring::npos) {
+                tp = obj.find(L'"', tp + 6); if (tp != std::wstring::npos) {
+                    size_t te = obj.find(L'"', tp + 1); if (te != std::wstring::npos)
+                        vt = obj.substr(tp + 1, te - tp - 1);
+                } }
+            // "label"
+            size_t lp = obj.find(L"\"label\""); if (lp != std::wstring::npos) {
+                lp = obj.find(L'"', lp + 7); if (lp != std::wstring::npos) {
+                    size_t le = obj.find(L'"', lp + 1); if (le != std::wstring::npos)
+                        vl = obj.substr(lp + 1, le - lp - 1);
+                } }
+            // "label1":  → 找冒号后的引号跳过 ":
+            size_t l1p = obj.find(L"\"label1\""); if (l1p != std::wstring::npos) {
+                l1p = obj.find(L':', l1p + 7); if (l1p != std::wstring::npos) {
+                    l1p++; while (l1p < obj.size() && obj[l1p] != L'"') l1p++;
+                    if (l1p < obj.size()) {
+                        size_t l1e = obj.find(L'"', l1p + 1); if (l1e != std::wstring::npos)
+                            l1 = obj.substr(l1p + 1, l1e - l1p - 1);
+                }}}
+            // "action":
+            size_t ap = obj.find(L"\"action\""); if (ap != std::wstring::npos) {
+                ap = obj.find(L':', ap + 8); if (ap != std::wstring::npos) {
+                    ap++; while (ap < obj.size() && obj[ap] != L'"') ap++;
+                    if (ap < obj.size()) {
+                        size_t ae = obj.find(L'"', ap + 1); if (ae != std::wstring::npos)
+                            action = obj.substr(ap + 1, ae - ap - 1);
+                }}}
+            // "label2":
+            size_t l2p = obj.find(L"\"label2\""); if (l2p != std::wstring::npos) {
+                l2p = obj.find(L':', l2p + 7); if (l2p != std::wstring::npos) {
+                    l2p++; while (l2p < obj.size() && obj[l2p] != L'"') l2p++;
+                    if (l2p < obj.size()) {
+                        size_t l2e = obj.find(L'"', l2p + 1); if (l2e != std::wstring::npos)
+                            l2 = obj.substr(l2p + 1, l2e - l2p - 1);
+                }}}
+        } else if (text[p] == L'"') {
+            size_t ve = text.find(L'"', p + 1); if (ve == std::wstring::npos) break;
+            vt = text.substr(p + 1, ve - p - 1); p = ve + 1;
+        } else continue;
+        if (key.empty()) continue;
+        s_dialogMap[key] = vt + (action.empty() ? L"" : L"\x01" + action);
+        if (!vl.empty())  { s_buttonLabelMap[key] = vl; s_buttonMap[key] = vt; }
+        if (!l1.empty()) { s_buttonLabelMap[key] = l1; }
+        if (!l2.empty()) { s_buttonMap[key] = l2; }
     }
-
-    UpdateDialogMetadata(path);
-}
+	}
 
 static bool IsAppWindow(HWND hwnd)
 {
@@ -904,95 +1009,38 @@ static void BuildTaskListEntries()
 }
 
 // 瀵硅瘽杈撳嚭
-void ChatTalk(HWND hwnd, const wchar_t* text)
+void ChatTalk(HWND hwnd, const wchar_t* text, int durationMs)
 {
-    BubbleChatPanel::Show(hwnd, text);
+    BubbleChatPanel::Show(hwnd, text, durationMs);
 }
 
 
 // 鏂囧瓧杈撳叆澶勭悊閫昏緫
-void ChatHandleInput(HWND hwnd, const std::wstring& input)
+void ChatEnsureDialogLoaded()
 {
-    ChatRecordInteraction();
-
     if (s_dialogMap.empty() || DialogFileChanged())
         LoadDialogConfig();
+}
 
-    const std::wstring normalized = Trim(input);
-    if (Setting::TryApplyInlineValue(normalized))
-    {
-        InvalidateRect(hwnd, nullptr, TRUE);
-        return;
-    }
-    auto it = s_dialogMap.find(normalized);
+const std::wstring* ChatLookupDialog(const std::wstring& input)
+{
+    ChatEnsureDialogLoaded();
+    auto it = s_dialogMap.find(input);
+    return (it != s_dialogMap.end()) ? &it->second : nullptr;
+}
 
-    if (IsTaskListTrigger(normalized))
-    {
-        TaskToolPanel::Toggle(hwnd);
-        return;
-    }
-
-    if (normalized == L"设置")
-    {
-        Setting::ToggleOverlay();
-        InvalidateRect(hwnd, nullptr, TRUE);
-        return;
-    }
-
-    if (normalized == L"我爱你")
-    {
-        if (it != s_dialogMap.end())
-            ChatTalk(hwnd, it->second.c_str());
-        else
-            ChatTalk(hwnd, L"要结束病娇游戏吗？");
-        // show button input
-        ChatShowButtonInput(hwnd, L"我爱你_1", L"我爱你_2");
-        return;
-    }
-
-    if (it != s_dialogMap.end())
-        ChatTalk(hwnd, it->second.c_str());
-    else
-    {
-        auto def = s_dialogMap.find(L"默认");
-        if (def != s_dialogMap.end())
-            ChatTalk(hwnd, def->second.c_str());
-        else
-            ChatTalk(hwnd, L"……我不太明白你在说什么。");
-    }
+const std::wstring* ChatLookupButton(const std::wstring& key)
+{
+    ChatEnsureDialogLoaded();
+    auto it = s_buttonMap.find(key);
+    return (it != s_buttonMap.end()) ? &it->second : nullptr;
 }
 
 // 鎸夐挳杈撳叆澶勭悊閫昏緫
-void ChatHandleButtonInput(HWND buttonWnd, const std::wstring& key)
-{
-    ChatRecordInteraction();
-
-    if (s_buttonMap.empty())
-        LoadDialogConfig();
-
-    if (!s_mainHwnd)
-        s_mainHwnd = GetParent(buttonWnd);
-
-    auto it = s_buttonMap.find(key);
-    if (it != s_buttonMap.end())
-        ChatTalk(GetParent(buttonWnd), it->second.c_str());
-
-    DestroyWindow(buttonWnd);
-
-    if (key == L"我爱你_2")
-    {
-        if (s_quitTimer)
-        {
-            DeleteTimerQueueTimer(nullptr, s_quitTimer, nullptr);
-            s_quitTimer = nullptr;
-        }
-        CreateTimerQueueTimer(&s_quitTimer, nullptr, QuitTimerProc, nullptr,
-            kQuitDelayMs, 0, WT_EXECUTEDEFAULT);
-    }
-}
 
 std::wstring ChatGetButtonLabel(const std::wstring& key, const std::wstring& fallback)
 {
+    ChatEnsureDialogLoaded();
     auto it = s_buttonLabelMap.find(key);
     return (it != s_buttonLabelMap.end()) ? it->second : fallback;
 }

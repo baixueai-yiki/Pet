@@ -15,22 +15,20 @@ void CloseComponent::OnMouseClick(UIActor& actor, int x, int y)
     (void)x;
     (void)y;
 
-    // 通过 Runtime/StateManager 的 ui.panel 维度判断当前状态
     auto s = StateGet(L"ui.panel");
 
-    if (s != L"idle" && s != L"input")
+    if (s != L"idle")
     {
-        // 有 UI 页面打开（overlay_* 等）→ 全部关闭
+        // 任何 UI 页面打开 → 全部关闭
         Setting::HideOverlay();
         InputChatPanel::Hide();
         OptionChatPanel::Hide();
         TaskToolPanel::Hide();
         InvalidateRect(actor.GetParent(), nullptr, TRUE);
     }
-    else if (s == L"idle")
+    else
     {
         // 无 UI 页面 → 展开输入栏
         InputChatPanel::Show(actor.GetParent());
     }
-    // s == "input" 时不做任何事（输入栏已打开，右键不重复打开）
 }

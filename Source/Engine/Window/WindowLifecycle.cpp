@@ -10,10 +10,10 @@
 #include "WindowLifecycle.h"
 #include "../../Core/Path.h"
 #include "../../Core/TextFile.h"
+#include "../../Core/PetState.h"
 #include "../../Systems/UI/UIPanels/ToolPanel/SettingToolPanel.h"
 #include "../../Runtime/Scheduler.h"
 #include "../../Systems/Pet/PetActor.h"
-#include "../../Systems/Pet/PetComponents/ChatComponent.h"
 
 static const UINT_PTR kIdleCheckTimer = 2;
 static const UINT kIdleCheckMs = 60000;
@@ -53,7 +53,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         int x = GET_X_LPARAM(lParam);
         int y = GET_Y_LPARAM(lParam);
-        // 如果设置面板在显示，允许对话区域接收事件
         if (Setting::IsPointInsideOverlay(x, y))
             return HTCLIENT;
         if (x >= g_pet.x && x <= g_pet.x + g_pet.w &&
@@ -77,6 +76,26 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         if (Setting::IsOverlayVisible() && Setting::HandleOverlayMouse(hwnd, msg, wParam, lParam))
             break;
         break;
+    case WM_SHOWWINDOW:
+        // 阻止被 Win+D 等操作隐藏：始终显示
+        if (!wParam)
+        {
+            ShowWindow(hwnd, SW_SHOW);
+            return 0;
+        }
+        break;
+
+    case WM_WINDOWPOSCHANGING:
+        // 阻止被隐藏（Win+D 等）
+        {
+            WINDOWPOS* wp = (WINDOWPOS*)lParam;
+            if (wp->flags & SWP_HIDEWINDOW)
+                wp->flags &= ~SWP_HIDEWINDOW;
+            if (wp->flags & SWP_NOSIZE && wp->flags & SWP_NOMOVE)
+                wp->flags |= SWP_NOZORDER;
+        }
+        break;
+
     case WM_TIMER:
         // 拖动时按稳定频率重绘
         if (wParam == kIdleCheckTimer)
@@ -150,10 +169,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         return 0;
 
-    case WM_USER + 1:
-        ChatShowInput(hwnd);
-        return 0;
-
     default:
         return DefWindowProc(hwnd, msg, wParam, lParam);
     }
@@ -176,9 +191,9 @@ HWND CreateMainWindow(HINSTANCE hInstance)
         return nullptr;
 
     HWND hwnd = CreateWindowExW(
-        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+        WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
         wc.lpszClassName,
-        L"Pet",
+        L"MissCarrot",
         WS_POPUP,
         0, 0,
         GetSystemMetrics(SM_CXSCREEN),

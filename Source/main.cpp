@@ -7,18 +7,17 @@ static HWND g_hwnd = nullptr;
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
 {
-    // 初始化宠物的状态数据，确保后续渲染与交互依赖的数据有效
+    // 初始化宠物默认状态（尝试从 state.json 恢复上次位置）
     PetInit();
-    
 
-    // 启动渲染器并加载资源；失败时给出提示并退出
+    // 启动 GDI+ 渲染引擎
     if (!RendererInit())
     {
-        MessageBoxW(nullptr, L"Failed to load assets\\images\\qing.png.", L"Pet", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to initialize renderer.", L"MissCarrot", MB_OK | MB_ICONERROR);
         return -1;
     }
 
-    // 创建透明的主窗口，作为宠物和输入消息的承载体
+    // 创建透明主窗口（WM_CREATE 时触发 PetInitSystems → PetRenderComponent 加载图片）
     g_hwnd = CreateMainWindow(hInstance);
     if (!g_hwnd)
     {
@@ -29,7 +28,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
     ShowWindow(g_hwnd, SW_SHOW);
     UpdateWindow(g_hwnd);
 
-    // 进入消息循环，持续处理系统分发的事件（鼠标、窗口等）
     MSG msg = {};
     while (GetMessage(&msg, nullptr, 0, 0))
     {
@@ -37,7 +35,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
         DispatchMessage(&msg);
     }
 
-    // 退出前释放渲染器占用的资源
     RendererShutdown();
     return 0;
 }

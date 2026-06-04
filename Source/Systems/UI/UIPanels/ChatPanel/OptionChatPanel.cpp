@@ -1,10 +1,17 @@
 #include "OptionChatPanel.h"
-#include "ChatPanelInternal.h"
 #include "../../../Pet/PetActor.h"
+#include "../../../Pet/PetComponents/InputComponent.h"
 #include "../../../Pet/PetComponents/ChatComponent.h"
+#include "../../../../Runtime/StateManager.h"
+
+constexpr int kInputWidth = 300;
+constexpr int kInputHeight = 40;
+constexpr int kButtonHeight = 80;
 
 namespace
 {
+    static HFONT s_inputFont = nullptr;
+    void EnsureInputFont() { if (!s_inputFont) s_inputFont = CreateFontW(20,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH|FF_DONTCARE,L"Microsoft YaHei UI"); }
     static HWND s_hButtonWnd = nullptr;
     static std::wstring s_buttonKey1;
     static std::wstring s_buttonKey2;
@@ -32,11 +39,12 @@ namespace
             {
                 const int id = LOWORD(wParam);
                 const std::wstring key = (id == 1) ? s_buttonKey1 : s_buttonKey2;
-                ChatHandleButtonInput(hwnd, key);
+                InputComponent::HandleButtonInput(hwnd, key);
             }
             break;
         case WM_DESTROY:
             s_hButtonWnd = nullptr;
+            StateSet(L"ui.panel", L"idle");
             break;
         default:
             return DefWindowProc(hwnd, msg, wParam, lParam);
@@ -49,8 +57,9 @@ void OptionChatPanel::Show(HWND hwndParent, const std::wstring& key1, const std:
 {
     s_buttonKey1 = key1;
     s_buttonKey2 = key2;
+    StateSet(L"ui.panel", L"input");
 
-    EnsureFonts();
+    EnsureInputFont();
 
     WNDCLASSW wc = {};
     wc.lpfnWndProc = ButtonInputProc;
@@ -101,10 +110,10 @@ void OptionChatPanel::Show(HWND hwndParent, const std::wstring& key1, const std:
     HWND btn2 = CreateWindowW(L"BUTTON", label2.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         20, 10 + btnH + 12, btnW, btnH, s_hButtonWnd, reinterpret_cast<HMENU>(2), GetModuleHandle(nullptr), nullptr);
 
-    if (g_inputFont)
+    if (s_inputFont)
     {
-        SendMessageW(btn1, WM_SETFONT, (WPARAM)g_inputFont, TRUE);
-        SendMessageW(btn2, WM_SETFONT, (WPARAM)g_inputFont, TRUE);
+        SendMessageW(btn1, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
+        SendMessageW(btn2, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
     }
 
     ShowWindow(s_hButtonWnd, SW_SHOW);
@@ -122,6 +131,7 @@ void OptionChatPanel::Hide()
         DestroyWindow(s_hButtonWnd);
         s_hButtonWnd = nullptr;
     }
+    StateSet(L"ui.panel", L"idle");
 }
 
 void OptionChatPanel::UpdatePosition()

@@ -1,0 +1,23 @@
+{
+  "我爱你": { "text": "诶……要结束病娇游戏吗？" , "label1": "就是想叫叫" , "label2":"换种玩法吧"},
+    "就是想叫叫": { "text": "诶嘿嘿……好哦"},
+    "换种玩法吧": { "text": "……那我先睡一会儿，好吗？" ,"action": "quit" },
+  "你的生日": { "text": "是日记情人节哦！", "action": "chat_birthday_1.wav"  , "label1": "是1月14日！" , "label2":"我去搜一下"},
+    "是1月14日！": { "text": "那~你的生日呢？", "action": "chat_birthday_2.wav" },
+    "我去搜一下": { "text": "那~你的生日呢？", "action": "chat_birthday_2.wav" },
+
+  "chat_idle_1": { "text": "……你在忙什么呀？" },
+  "chat_idle_2": { "text": "我在这里等你。" },
+  "chat_idle_3": { "text": "要不要休息一下？" },
+  "chat_idle_4": { "text": "我有点想你了。" },
+  "chat_idle_5": { "text": "你回来啦，我一直在看着你。" },
+
+  "chat_morning_1": { "text": "早上好，吃过早餐了吗" , "action": "chat_morning_1.wav"},
+  "chat_morning_2": { "text": "早上好，肢体有哪里不舒服吗？" , "action": "chat_morning_2.wav"},
+  "chat_lunch_1": { "text": "是午餐时间了呢，我来给你准备午餐吧" , "action": "chat_lunch_1.wav"},
+  "chat_afternoon_1": { "text": "下午好，要吃些小零食吗？" , "action": "chat_afternoon_1.wav"},
+  "chat_dinner_1": { "text": "晚餐，吃了什么呀？" , "action": "chat_dinner_1.wav"},
+  "chat_night_1": { "text": "啊~哈——已经是晚安的时间了哦，要一起睡觉嘛" , "action": "chat_night_1.wav"},
+  "chat_sleep_1": { "text": "啊！都凌晨了，熬夜可不好哦" , "action": "chat_sleep_1.wav"}
+
+}

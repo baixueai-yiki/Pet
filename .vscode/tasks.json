@@ -1,4 +1,4 @@
-﻿{
+{
     "version": "2.0.0",
     "tasks": [
         {
@@ -14,7 +14,7 @@
                 "-SourceRoot",
                 "Source",
                 "-OutputExe",
-                "Distribution/alpha/Miss_qing/Pet.exe",
+                "Distribution/alpha/MissCarrot/MissCarrot.exe",
                 "-ObjectDir",
                 "Build/obj"
             ],

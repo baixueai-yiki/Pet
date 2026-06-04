@@ -3,7 +3,6 @@
 #include "UIComponents/ScrollComponent.h"
 #include "UIComponents/DragComponent.h"
 #include "UIComponents/InputComponent.h"
-#include "UIPanels/ChatPanel/ChatPanelInternal.h"
 #include "UIPanels/ToolPanel/TaskToolPanel.h"
 #include <memory>
 
@@ -81,7 +80,6 @@ void UIActor::InitializeSingleton(HWND parent)
     s_instance->Initialize(parent);
     s_instance->Show();
 
-    EnsureFonts();
     TaskToolPanel::Setup(*s_instance);
 }
 

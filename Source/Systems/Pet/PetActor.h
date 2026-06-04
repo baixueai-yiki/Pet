@@ -1,23 +1,10 @@
 ﻿#pragma once
+#include "../../Core/PetState.h"
 #include <windows.h>
 #include <string>
 #include <vector>
 #include <map>
 #include <memory>
-
-// 记录宠物的位置、大小以及拖拽状态
-struct PetState
-{
-    int x;
-    int y;
-    int w;
-    int h;
-    bool isDragging;
-    int dragOffsetX;
-    int dragOffsetY;
-};
-
-extern PetState g_pet;
 
 // 桌宠的内在状态，跨系统共享（闲聊频率等）
 struct PetMindState
@@ -26,6 +13,36 @@ struct PetMindState
     int valence;
     int arousal;
 };
+
+// 生理期周期状态
+struct PetCycleState
+{
+    int phase = 0;    // 0=上升期, 1=下降期, 2=经期
+    int day = 1;      // 当前阶段的第几天（1-based）
+};
+extern PetCycleState g_cycle;
+
+// 周期阶段长度
+constexpr int kRisingDays = 12;
+constexpr int kFallingDays = 12;
+constexpr int kPeriodDays = 4;
+constexpr int kCycleTotalDays = kRisingDays + kFallingDays + kPeriodDays; // 28
+
+// 生理期接口
+void PetCycleInit();                          // 启动时初始化/推进周期 + 计算兴奋度
+void PetCycleAdvance(int days);                // 推进 N 天（正向）
+void PetCycleAdvanceDay(int delta);            // 调整 ±1 天（睡眠触发用）
+int  PetGetCyclePhase();                       // 0=上升期, 1=下降期, 2=经期
+int  PetGetCycleDay();                         // 当前阶段第几天 (1-based)
+const wchar_t* PetGetCyclePhaseName();         // 中文名称
+int  PetGetArousal();                          // 当前兴奋度 (1-12)
+void PetFirstLine(HWND hwnd);                   // 启动时说的第一句话
+
+
+// 每小时随机触发
+bool PetCheckHourlyTrigger(int hour, int minute); // 检查是否命中触发点
+unsigned int PetGetTriggeredMask();                // 已触发小时 bitmask
+const wchar_t* PetGetLastTriggerDate();            // 上次触发日期
 
 // 获取可变的内在状态引用
 PetMindState& PetMindStateRef();

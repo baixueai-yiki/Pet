@@ -7,7 +7,15 @@ static HWND g_hwnd = nullptr;
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
 {
-    // 初始化宠物默认状态（尝试从 state.json 恢复上次位置）
+    // 单实例：已运行时不再启动
+    HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"MissCarrot_SingleInstance");
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        if (hMutex) CloseHandle(hMutex);
+        return 0;
+    }
+
+    // 初始化宠物默认状态
     PetInit();
 
     // 启动 GDI+ 渲染引擎

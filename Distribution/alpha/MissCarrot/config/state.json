@@ -5,9 +5,9 @@
   "pet_x": 1035,
   "pet_y": 581,
   "cycle_phase": 0,
-  "cycle_day": 2,
-  "last_run_date": "2026-06-05",
+  "cycle_day": 3,
+  "last_run_date": "2026-06-06",
   "triggered_mask": 0,
-  "last_trigger_date": "2026-06-05",
+  "last_trigger_date": "2026-06-06",
   "birthday": "not"
 }

@@ -268,8 +268,23 @@ bool LoadIdleMap(std::map<std::wstring, std::wstring>& mapOut)
                         size_t ae = obj.find(L'"', ap + 1); if (ae != std::wstring::npos)
                             valAction = obj.substr(ap + 1, ae - ap - 1);
                     } }
+                std::wstring valL1, valL2;
+                size_t l1p = obj.find(L"\"label1\""); if (l1p != std::wstring::npos) {
+                    l1p = obj.find(L':', l1p + 8); if (l1p != std::wstring::npos) {
+                        l1p++; while (l1p < obj.size() && iswspace(obj[l1p])) l1p++;
+                        if (l1p < obj.size() && obj[l1p] == L'"') {
+                            size_t l1e = obj.find(L'"', l1p + 1); if (l1e != std::wstring::npos) valL1 = obj.substr(l1p + 1, l1e - l1p - 1);
+                }}}
+                size_t l2p = obj.find(L"\"label2\""); if (l2p != std::wstring::npos) {
+                    l2p = obj.find(L':', l2p + 8); if (l2p != std::wstring::npos) {
+                        l2p++; while (l2p < obj.size() && iswspace(obj[l2p])) l2p++;
+                        if (l2p < obj.size() && obj[l2p] == L'"') {
+                            size_t l2e = obj.find(L'"', l2p + 1); if (l2e != std::wstring::npos) valL2 = obj.substr(l2p + 1, l2e - l2p - 1);
+                }}}
                 mapOut[key] = valText + (valMood.empty() ? L"" : L"\uff0c" + valMood)
-                                        + (valAction.empty() ? L"" : L"|" + valAction);
+                                        + (valAction.empty() ? L"" : L"|" + valAction)
+                                        + (valL1.empty() ? L"" : L"|" + valL1)
+                                        + (valL2.empty() ? L"" : L"|" + valL2);
             } else continue;
         }
     }

@@ -9,7 +9,7 @@ class DialoguePanel
 {
 public:
     // key, text, mood
-    using Entry = std::tuple<std::wstring, std::wstring, std::wstring, std::wstring>; // key,text,mood,action
+    using Entry = std::tuple<std::wstring, std::wstring, std::wstring, std::wstring, std::vector<std::wstring>>; // key,text,mood,action,labels
 
     static void Show(const std::vector<Entry>& entries);
     static void AdvanceOrHide();

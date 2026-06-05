@@ -2,7 +2,7 @@
   "我爱你": { "text": "诶……要结束病娇游戏吗？" , "label1": "就是想叫叫" , "label2":"换种玩法吧"},
     "就是想叫叫": { "text": "诶嘿嘿……好哦"},
     "换种玩法吧": { "text": "……那我先睡一会儿，好吗？" ,"action": "quit" },
-  "你的生日": { "text": "是日记情人节哦！", "action": "chat_birthday_1.wav"  , "label1": "是1月14日！" , "label2":"我去搜一下"},
+  "你的生日": { "text": "是日记情人节哦！", "action": "chat_birthday_1.wav"  , "label1": "是1月14日！" },
     "是1月14日！": { "text": "那~你的生日呢？", "action": "chat_birthday_2.wav" },
     "我去搜一下": { "text": "那~你的生日呢？", "action": "chat_birthday_2.wav" },
 

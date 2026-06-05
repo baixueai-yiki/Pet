@@ -105,15 +105,24 @@ void OptionChatPanel::Show(HWND hwndParent, const std::wstring& key1, const std:
     const int btnH = 28;
     const std::wstring label1 = ChatGetButtonLabel(key1, key1);
     const std::wstring label2 = ChatGetButtonLabel(key2, key2);
+    bool single = key2.empty();
     HWND btn1 = CreateWindowW(L"BUTTON", label1.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
         20, 10, btnW, btnH, s_hButtonWnd, reinterpret_cast<HMENU>(1), GetModuleHandle(nullptr), nullptr);
-    HWND btn2 = CreateWindowW(L"BUTTON", label2.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-        20, 10 + btnH + 12, btnW, btnH, s_hButtonWnd, reinterpret_cast<HMENU>(2), GetModuleHandle(nullptr), nullptr);
+    HWND btn2 = nullptr;
+    if (!single) {
+        btn2 = CreateWindowW(L"BUTTON", label2.c_str(), WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            20, 10 + btnH + 12, btnW, btnH, s_hButtonWnd, reinterpret_cast<HMENU>(2), GetModuleHandle(nullptr), nullptr);
+    }
 
     if (s_inputFont)
     {
         SendMessageW(btn1, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
-        SendMessageW(btn2, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
+        if (btn2) SendMessageW(btn2, WM_SETFONT, (WPARAM)s_inputFont, TRUE);
+    }
+
+    if (single) {
+        RECT r; GetWindowRect(s_hButtonWnd, &r);
+        SetWindowPos(s_hButtonWnd, HWND_TOPMOST, 0, 0, r.right-r.left, btnH + 20, SWP_NOMOVE | SWP_NOACTIVATE);
     }
 
     ShowWindow(s_hButtonWnd, SW_SHOW);

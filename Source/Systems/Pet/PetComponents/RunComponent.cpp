@@ -190,8 +190,13 @@ static std::vector<DialoguePanel::Entry> LoadSequence(StartupMode mode)
         std::wstring raw = it->second, text = raw, mood = L"happy", action;
         size_t comma = text.rfind(L'，'); if (comma==std::wstring::npos) comma=text.rfind(L',');
         if (comma!=std::wstring::npos) { mood=text.substr(comma+1); text=text.substr(0,comma); }
-        size_t pipe = mood.find(L'|'); if (pipe!=std::wstring::npos) { action=mood.substr(pipe+1); mood=mood.substr(0,pipe); }
-        entries.push_back({k, text, mood, action});
+        // 按 | 分割: mood|action|label1|label2|...
+        std::vector<std::wstring> parts, labels;
+        size_t pp=0;
+        while(1){size_t nx=mood.find(L'|',pp); parts.push_back(mood.substr(pp, nx==std::wstring::npos?nx:nx-pp)); if(nx==std::wstring::npos)break; pp=nx+1;}
+        mood=parts.size()>0?parts[0]:L"happy"; action=parts.size()>1?parts[1]:L"";
+        for(size_t i=2;i<parts.size();i++) if(!parts[i].empty()) labels.push_back(parts[i]);
+        entries.push_back({k, text, mood, action, labels});
     }
     return entries;
 }

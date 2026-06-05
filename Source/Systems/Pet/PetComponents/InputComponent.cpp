@@ -81,14 +81,16 @@ void InputComponent::HandleInput(HWND hwnd, const std::wstring& input)
         else if (!action.empty())
             AudioComponent::PlayAudioAsset(L"audio\\" + action);
 
-        // 检查是否有 label1/label2 → 弹出选项按钮
+        // 检查是否有选项按钮
         {
             std::wstring matchKey = ChatLastMatchedKey();
             if (matchKey.empty()) matchKey = normalized;
             std::wstring l1 = ChatGetButtonLabel(matchKey, L"");
             auto* l2 = ChatLookupButton(matchKey);
-            if (!l1.empty() && l2 && l1.find(L"__btn__") == std::wstring::npos)
-                ChatShowButtonInput(hwnd, l1, *l2);
+            if (!l1.empty()) {
+                if (l2 && !l2->empty()) ChatShowButtonInput(hwnd, l1, *l2);
+                else ChatShowButtonInput(hwnd, l1, L"");
+            }
         }
         return;
     }
@@ -99,8 +101,10 @@ void InputComponent::HandleInput(HWND hwnd, const std::wstring& input)
         std::wstring mk2 = ChatLastMatchedKey(); if (mk2.empty()) mk2 = normalized;
         std::wstring l1 = ChatGetButtonLabel(mk2, L"");
         auto* l2 = ChatLookupButton(mk2);
-        if (!l1.empty() && l2 && l1.find(L"__btn__") == std::wstring::npos)
-            ChatShowButtonInput(hwnd, l1, *l2);
+        if (!l1.empty()) {
+            if (l2 && !l2->empty()) ChatShowButtonInput(hwnd, l1, *l2);
+            else ChatShowButtonInput(hwnd, l1, L"");
+        }
         return;
     }
 

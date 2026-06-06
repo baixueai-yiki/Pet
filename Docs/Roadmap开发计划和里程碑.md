@@ -5,7 +5,7 @@
 版权问责可找qq2017360739（希望等池池闭关结束后我有机会和池池讲一下）
 致敬 《爱之巢》作者 莲花池池
 致敬 《晴小姐陪伴系统》作者 青音连旭
-下载渠道：
+下载渠道：https://github.com/baixueai-yiki/baixueai-yiki.github.io/blob/main/share/某神秘的胡萝卜小姐.zip?raw=true
 GitHub项目库：https://github.com/baixueai-yiki/Pet
 ## 未来计划的更新
 # 1.设计一个新的Actor

@@ -2,12 +2,12 @@
   "last_interaction_time": 0,
   "valence": 8,
   "arousal": 8,
-  "pet_x": 1035,
+  "pet_x": 1080,
   "pet_y": 581,
   "cycle_phase": 0,
   "cycle_day": 3,
   "last_run_date": "2026-06-06",
-  "triggered_mask": 0,
+  "triggered_mask": 61440,
   "last_trigger_date": "2026-06-06",
   "birthday": "not"
 }
